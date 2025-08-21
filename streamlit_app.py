@@ -6,7 +6,7 @@ import time
 
 # --- تنظیمات اولیه ---
 # آدرس API که در مرحله قبل با FastAPI ساختیم
-API_URL = "http://127.0.0.1:8000/chat"
+API_URL = "https://fit-coach-app.onrender.com/"
 
 # --- توابع اصلی ---
 

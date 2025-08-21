@@ -9,7 +9,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 TELEGRAM_BOT_TOKEN = "1991464642:AAG_1PuUDkcIw8otMoBJ3I-_41bD7974YsY"
 
 # آدرس وب‌اپ استریم‌لیت شما (بعد از استقرار، این آدرس را جایگزین کنید)
-WEB_APP_URL = "https://github.com/IK7D3" 
+WEB_APP_URL = "https://fitcoachapp-mhz8neos3buegdphlxfqzb.streamlit.app/" 
 
 # فعال کردن لاگ برای خطایابی بهتر
 logging.basicConfig(
