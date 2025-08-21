@@ -13,7 +13,7 @@ API_URL = "https://fit-coach-app.onrender.com/chat"
 def display_landing_screen():
     """نمایش صفحه ورودی برای جذب کاربر."""
     st.title("به دستیار هوشمند مربی خوش آمدید! 🤖")
-    st.image("https://placehold.co/600x300/DBF1FF/3D4A59?text=Fit+Coach+AI", use_column_width=True)
+    st.image("https://placehold.co/600x300/DBF1FF/3D4A59?text=Fit+Coach+AI", use_container_width=True)
     st.header("یک برنامه تمرینی هوشمند و رایگان دریافت کنید")
     st.markdown("""
     با پاسخ به چند سوال ساده، دستیار هوشمند ما یک برنامه تمرینی اولیه و مؤثر،
