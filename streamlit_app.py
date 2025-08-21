@@ -97,32 +97,32 @@ def send_message_to_backend(message: str):
 
 
 # --- منطق اصلی برنامه ---
-
 def main():
     st.set_page_config(page_title="مربی هوشمند", page_icon="🤖")
 
-    # مقداردهی اولیه session_state برای نگهداری وضعیت کاربر
+    # مقداردهی اولیه session_state
     if 'telegram_user_id' not in st.session_state:
-        # در پروژه نهایی، این ID از تلگرام می‌آید. فعلاً یک ID تصادفی می‌سازیم.
         st.session_state.telegram_user_id = random.randint(1000, 9999)
         st.session_state.first_name = "کاربر"
-    
+
     if 'messages' not in st.session_state:
         st.session_state.messages = []
 
-    if 'chat_started' not in st.session_state:
-        st.session_state.chat_started = False
-    
     if 'plan_received' not in st.session_state:
         st.session_state.plan_received = False
 
-    # نمایش صفحه مناسب بر اساس وضعیت فعلی کاربر
+    # --- بخش کلیدی جدید ---
+    # اگر این اولین باری است که کاربر وارد می‌شود (تاریخچه چت خالی است)
+    # به صورت خودکار گفتگو را از طرف ربات شروع می‌کنیم.
+    if not st.session_state.messages:
+        send_message_to_backend("start")
+
+    # نمایش صفحه مناسب بر اساس وضعیت
     if st.session_state.plan_received:
         display_workout_plan()
-    elif st.session_state.chat_started:
-        display_chat_interface()
     else:
-        display_landing_screen()
+        # دیگر نیازی به صفحه ورودی جداگانه نیست
+        display_chat_interface()
 
 
 if __name__ == "__main__":
