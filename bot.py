@@ -3,15 +3,12 @@ import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
+import urllib.parse
 
 # --- تنظیمات اولیه ---
-# توکن ربات خود را اینجا قرار دهید. بهتر است از متغیرهای محیطی استفاده کنید.
 TELEGRAM_BOT_TOKEN = "1991464642:AAG_1PuUDkcIw8otMoBJ3I-_41bD7974YsY"
+BASE_WEB_APP_URL = "https://your-streamlit-app-url.streamlit.app" # آدرس اصلی استریم‌لیت
 
-# آدرس وب‌اپ استریم‌لیت شما (بعد از استقرار، این آدرس را جایگزین کنید)
-WEB_APP_URL = "https://fitcoachapp-mhz8neos3buegdphlxfqzb.streamlit.app/" 
-
-# فعال کردن لاگ برای خطایابی بهتر
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
@@ -26,12 +23,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     logger.info(f"User {user.id} ({user.first_name}) started the bot.")
     
+    # ساخت URL داینامیک با اطلاعات کاربر
+    # ما نام کاربر را URL-encode می‌کنیم تا کاراکترهای خاص مثل فاصله مشکلی ایجاد نکنند
+    encoded_first_name = urllib.parse.quote(user.first_name or "کاربر")
+    web_app_url_with_params = f"{BASE_WEB_APP_URL}?user_id={user.id}&first_name={encoded_first_name}"
+
     # ساخت دکمه برای باز کردن وب‌اپ
     keyboard = [
         [
             InlineKeyboardButton(
                 "🚀 باز کردن دستیار هوشمند",
-                web_app=WebAppInfo(url=WEB_APP_URL)
+                web_app=WebAppInfo(url=web_app_url_with_params)
             )
         ]
     ]
@@ -40,7 +42,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # ارسال پیام خوشامدگویی به همراه دکمه
     welcome_message = (
         f"سلام {user.first_name} عزیز!\n\n"
-        "به دستیار هوشمند مربی خوش آمدی. برای شروع مصاحبه و دریافت برنامه تمرینی رایگان، "
+        "به دستیار هوشمند مربی خوش آمدی. برای شروع مصاحبه و دریافت برنامه تمرینی رایگان, "
         "لطفاً روی دکمه زیر کلیک کن."
     )
     
@@ -50,19 +52,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def main() -> None:
     """ربات را راه‌اندازی و اجرا می‌کند."""
-    
-    # خواندن توکن از متغیرهای محیطی برای امنیت بیشتر
     token = os.getenv("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN)
     if not token:
         raise ValueError("توکن ربات تلگرام یافت نشد. لطفاً آن را تنظیم کنید.")
 
-    # ساخت اپلیکیشن ربات
     application = Application.builder().token(token).build()
-
-    # ثبت دستور /start
     application.add_handler(CommandHandler("start", start))
-
-    # اجرای ربات تا زمانی که کاربر آن را متوقف کند
     logger.info("Bot is running...")
     application.run_polling()
 

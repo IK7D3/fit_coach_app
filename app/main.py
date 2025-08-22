@@ -2,36 +2,35 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from typing import List
 
 # وارد کردن کلاس‌ها و توابع از فایل‌های دیگر پروژه
-from . import models
-from .database import SessionLocal, engine
-from .chatbot import FitnessCoachAssistant
+import models
+from database import SessionLocal, engine
+from chatbot import FitnessCoachAssistant
 
-# این دستور، اگر جداول وجود نداشته باشند، آن‌ها را می‌سازد
-# (جایگزین بهتری برای اسکریپت create_db.py در محیط پروداکشن)
 models.Base.metadata.create_all(bind=engine)
 
-# ساخت اپلیکیشن FastAPI
 app = FastAPI(title="Fit Coach AI API")
 
-# --- مدیریت حافظه چت برای هر کاربر ---
-# یک دیکشنری ساده برای نگهداری یک نمونه از دستیار برای هر کاربر
-# نکته: در یک اپلیکیشن واقعی و بزرگ، از راه حل بهتری مثل Redis استفاده می‌شود
 chat_sessions = {}
 
-# --- مدل‌های Pydantic برای اعتبارسنجی ورودی و خروجی API ---
+# --- مدل‌های Pydantic ---
 class ChatRequest(BaseModel):
     telegram_user_id: int
     message: str
-    first_name: str | None = None # اختیاری، برای ساخت کاربر جدید
+    first_name: str | None = None
 
 class ChatResponse(BaseModel):
     ai_response: str
     is_final: bool = False
     plan_data: dict | None = None
 
-# --- Dependency برای مدیریت Session دیتابیس ---
+class ChatHistoryResponse(BaseModel):
+    sender: str
+    message_text: str
+
+# --- Dependency ---
 def get_db():
     db = SessionLocal()
     try:
@@ -39,7 +38,7 @@ def get_db():
     finally:
         db.close()
 
-# --- تعریف API Endpoints ---
+# --- API Endpoints ---
 
 @app.post("/chat", response_model=ChatResponse)
 def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
@@ -92,6 +91,23 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
         )
 
     return ChatResponse(ai_response=ai_message_text)
+
+
+# --- Endpoint جدید برای تاریخچه ---
+@app.get("/chat/{telegram_user_id}/history", response_model=List[ChatHistoryResponse])
+def get_chat_history(telegram_user_id: int, db: Session = Depends(get_db)):
+    """
+    تاریخچه چت یک کاربر خاص را برمی‌گرداند.
+    """
+    user = db.query(models.User).filter(models.User.telegram_user_id == telegram_user_id).first()
+    if not user:
+        # اگر کاربر وجود نداشت، تاریخچه خالی برمی‌گردانیم
+        return []
+    
+    # مرتب‌سازی بر اساس زمان برای نمایش صحیح
+    history = db.query(models.ChatHistory).filter(models.ChatHistory.user_id == user.id).order_by(models.ChatHistory.timestamp).all()
+    return history
+
 
 @app.get("/")
 def read_root():

@@ -7,6 +7,7 @@ import time
 # --- تنظیمات اولیه ---
 # آدرس API که در مرحله قبل با FastAPI ساختیم
 API_URL = "https://fitcoachapp-production.up.railway.app/chat"
+HISTORY_API_URL = "https://fitcoachapp-production.up.railway.app/chat/{user_id}/history"
 
 # --- توابع اصلی ---
 
@@ -65,7 +66,6 @@ def display_workout_plan():
     if st.button("دریافت برنامه تخصصی (به زودی)", use_container_width=True):
         st.toast("این قابلیت به زودی اضافه خواهد شد!")
 
-
 def send_message_to_backend(message: str):
     """ارسال پیام به API و پردازش پاسخ."""
     with st.chat_message("assistant"):
@@ -95,33 +95,61 @@ def send_message_to_backend(message: str):
                 st.error(error_message)
                 st.session_state.messages.append({"role": "assistant", "content": error_message})
 
+def load_chat_history():
+    """تاریخچه چت کاربر را از بک‌اند بارگذاری می‌کند."""
+    user_id = st.session_state.telegram_user_id
+    try:
+        response = requests.get(HISTORY_API_URL.format(user_id=user_id))
+        response.raise_for_status()
+        history = response.json()
+        
+        # تبدیل فرمت تاریخچه دریافتی به فرمت مورد نیاز استریم‌لیت
+        formatted_history = []
+        for msg in history:
+            role = "user" if msg["sender"] == "user" else "assistant"
+            formatted_history.append({"role": role, "content": msg["message_text"]})
+        
+        st.session_state.messages = formatted_history
+        return True # تاریخچه با موفقیت بارگذاری شد
+    except requests.exceptions.RequestException as e:
+        st.error(f"خطا در بارگذاری تاریخچه: {e}")
+        return False # خطایی رخ داد
+
 
 # --- منطق اصلی برنامه ---
 def main():
     st.set_page_config(page_title="مربی هوشمند", page_icon="🤖")
 
+    # --- بخش کلیدی جدید: خواندن اطلاعات از URL ---
+    query_params = st.query_params
+    
     # مقداردهی اولیه session_state
-    if 'telegram_user_id' not in st.session_state:
-        st.session_state.telegram_user_id = random.randint(1000, 9999)
-        st.session_state.first_name = "کاربر"
+    if 'initialized' not in st.session_state:
+        user_id_from_url = query_params.get("user_id")
+        first_name_from_url = query_params.get("first_name")
 
-    if 'messages' not in st.session_state:
+        if user_id_from_url:
+            st.session_state.telegram_user_id = int(user_id_from_url)
+            st.session_state.first_name = first_name_from_url or "کاربر"
+        else:
+            # این بخش برای تست مستقیم استریم‌لیت باقی می‌ماند
+            st.session_state.telegram_user_id = 99999 # یک ID تستی
+            st.session_state.first_name = "کاربر تستی"
+
         st.session_state.messages = []
-
-    if 'plan_received' not in st.session_state:
         st.session_state.plan_received = False
+        st.session_state.initialized = True # برای جلوگیری از اجرای مجدد این بخش
+        
+        # --- حل مشکل سوم: بارگذاری تاریخچه ---
+        if not load_chat_history():
+             # اگر تاریخچه وجود نداشت یا خطایی رخ داد، گفتگوی جدید شروع می‌کنیم
+             send_message_to_backend("start")
 
-    # --- بخش کلیدی جدید ---
-    # اگر این اولین باری است که کاربر وارد می‌شود (تاریخچه چت خالی است)
-    # به صورت خودکار گفتگو را از طرف ربات شروع می‌کنیم.
-    if not st.session_state.messages:
-        send_message_to_backend("start")
 
-    # نمایش صفحه مناسب بر اساس وضعیت
+    # نمایش صفحه مناسب بر اساس وضعیت فعلی کاربر
     if st.session_state.plan_received:
         display_workout_plan()
     else:
-        # دیگر نیازی به صفحه ورودی جداگانه نیست
         display_chat_interface()
 
 
