@@ -185,6 +185,7 @@ def main():
             display_workout_plan(st.session_state.get("plan_data"))
         else:
             display_chat_interface()
-
+    st.write("DEBUG - session_state:", dict(st.session_state))
+    
 if __name__ == "__main__":
     main()
