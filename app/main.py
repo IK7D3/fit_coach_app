@@ -1,9 +1,9 @@
 # app/main.py
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List
-
+from sqlalchemy import text 
 # وارد کردن کلاس‌ها و توابع از فایل‌های دیگر پروژه
 from . import models
 from .database import SessionLocal, engine
@@ -146,3 +146,19 @@ def get_chat_history(telegram_user_id: int, db: Session = Depends(get_db)):
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the Fit Coach AI API!"}
+
+@app.post("/test/clear-data", status_code=status.HTTP_200_OK)
+def clear_test_data(db: Session = Depends(get_db)):
+    """
+    !!! هشدار: این Endpoint تمام کاربران و تاریخچه چت را پاک می‌کند.
+    فقط برای اهداف تست استفاده شود.
+    """
+    try:
+        # ما از دستور SQL خام TRUNCATE استفاده می‌کنیم که بسیار سریع است
+        # CASCADE به صورت خودکار رکوردهای مرتبط در chat_history را پاک می‌کند
+        db.execute(text("TRUNCATE TABLE users, chat_history RESTART IDENTITY CASCADE;"))
+        db.commit()
+        return {"status": "success", "message": "جداول users و chat_history با موفقیت پاک شدند."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
