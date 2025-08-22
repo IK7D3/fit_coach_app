@@ -108,7 +108,8 @@ def send_message_to_backend(message: str):
                     "message": message,
                     "first_name": st.session_state.first_name
                 }
-                response = requests.post(API_URL, json=payload)
+                # --- اینجا اصلاح شد ---
+                response = requests.post(CHAT_API_URL, json=payload)
                 response.raise_for_status() # بررسی خطاهای HTTP
                 
                 data = response.json()
