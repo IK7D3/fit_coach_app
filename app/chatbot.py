@@ -2,14 +2,10 @@
 import os
 import json
 from langchain_cohere import ChatCohere
-from langchain.prompts import (
-    ChatPromptTemplate,
-    MessagesPlaceholder,
-    SystemMessagePromptTemplate,
-    HumanMessagePromptTemplate,
-)
-from langchain.chains import ConversationChain
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.memory import ConversationBufferMemory
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 
 # ---- تنظیمات اولیه ----
 # کلید API خود را اینجا قرار دهید. بهتر است از متغیرهای محیطی استفاده کنید.
@@ -69,34 +65,42 @@ SYSTEM_PROMPT = """
 
 class FitnessCoachAssistant:
     """
-    کلاس اصلی برای مدیریت گفتگوی هوشمند با کاربر.
+    کلاس اصلی برای مدیریت گفتگوی هوشمند با کاربر (با استفاده از LCEL).
     """
     def __init__(self):
-        # ساخت مدل Cohere
         self.llm = ChatCohere(model="command-r", temperature=0.7)
-        
-        # ساخت Prompt Template با حافظه
-        self.prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(SYSTEM_PROMPT),
+        self.memory = ConversationBufferMemory(return_messages=True, memory_key="history")
+        self.prompt_template = ChatPromptTemplate.from_messages([
+            ("system", SYSTEM_PROMPT),
             MessagesPlaceholder(variable_name="history"),
-            HumanMessagePromptTemplate.from_template("{input}")
+            ("human", "{input}"),
         ])
         
-        # ساخت حافظه برای ذخیره تاریخچه گفتگو
-        self.memory = ConversationBufferMemory(return_messages=True)
-        
-        # ساخت زنجیره گفتگو (Conversation Chain)
-        self.conversation = ConversationChain(
-            memory=self.memory, 
-            prompt=self.prompt, 
-            llm=self.llm
+        # ساخت زنجیره جدید با LCEL
+        self.chain = (
+            RunnablePassthrough.assign(
+                history=lambda x: self.memory.chat_memory.messages,
+            )
+            | self.prompt_template
+            | self.llm
+            | StrOutputParser()
         )
 
-    def get_response(self, user_input: str) -> str:
+    def get_response(self, user_input: str, formatted_prompt_str: str = None) -> str:
         """
         یک ورودی از کاربر می‌گیرد و پاسخ AI را برمی‌گرداند.
+        اگر پرامپت فرمت‌شده ارسال شود، از آن استفاده می‌کند.
         """
-        return self.conversation.predict(input=user_input)
+        # اگر پرامپت جدیدی برای فرمت کردن ارسال شده، آن را آپدیت می‌کنیم
+        if formatted_prompt_str:
+            self.prompt_template.messages[0].prompt.template = formatted_prompt_str
+        
+        response = self.chain.invoke({"input": user_input})
+        
+        # ذخیره کردن دستی مکالمه در حافظه
+        self.memory.save_context({"input": user_input}, {"output": response})
+        
+        return response
 
     @staticmethod
     def parse_final_response(ai_response: str):
@@ -104,16 +108,21 @@ class FitnessCoachAssistant:
         تلاش می‌کند تا پاسخ نهایی AI را به فرمت JSON پارس کند.
         """
         try:
-            # گاهی AI ممکن است JSON را داخل بلاک کد ```json قرار دهد
             if "```json" in ai_response:
                 clean_response = ai_response.split("```json")[1].split("```")[0].strip()
             else:
-                clean_response = ai_response.strip()
+                # پیدا کردن اولین '{' و آخرین '}' برای استخراج JSON
+                start_index = ai_response.find('{')
+                end_index = ai_response.rfind('}')
+                if start_index != -1 and end_index != -1:
+                    clean_response = ai_response[start_index : end_index + 1]
+                else:
+                    return None
             
             return json.loads(clean_response)
         except (json.JSONDecodeError, IndexError):
-            # اگر پاسخ در فرمت JSON نبود، یعنی مکالمه هنوز ادامه دارد
             return None
+
 
 # --- بخش تست (برای اجرای مستقیم این فایل) ---
 if __name__ == "__main__":

@@ -12,27 +12,15 @@ HISTORY_API_URL = f"{API_BASE_URL}/chat/{{user_id}}/history"
 
 def submit_form_and_start_chat():
     """
-    این تابع به صورت خودکار بعد از پر شدن آخرین فیلد فرم اجرا می‌شود.
+    اطلاعات فرم را به بک‌اند ارسال کرده و کاربر را به مرحله چت منتقل می‌کند.
     """
-    # دسترسی امن به متغیرهای حافظه با .get() برای جلوگیری از خطا
-    gender = st.session_state.get("gender_input")
-    height = st.session_state.get("height_input", 0)
-    current_weight = st.session_state.get("current_weight_input", 0)
-    target_weight = st.session_state.get("target_weight_input", 0)
-
-    if not all([gender, height > 100, current_weight > 30, target_weight > 30]):
-        # این پیام فقط در صورتی نمایش داده می‌شود که کاربر مقادیر را ناقص وارد کند
-        st.toast("لطفاً وزن هدف را به درستی وارد کنید تا ادامه دهیم.")
-        return
-
-    # ارسال اطلاعات به بک‌اند
     with st.spinner("در حال ذخیره اطلاعات و آماده‌سازی گفتگو..."):
         payload = {
             "telegram_user_id": st.session_state.telegram_user_id,
-            "gender": gender.lower(),
-            "height_cm": height,
-            "current_weight_kg": current_weight,
-            "target_weight_kg": target_weight
+            "gender": st.session_state.gender_input,
+            "height_cm": st.session_state.height_input,
+            "current_weight_kg": st.session_state.current_weight_input,
+            "target_weight_kg": st.session_state.target_weight_input
         }
         try:
             response = requests.post(FORM_API_URL, json=payload)
@@ -44,15 +32,9 @@ def submit_form_and_start_chat():
 
 def display_form_step_1():
     st.header("مرحله ۱ از ۳: جنسیت")
-    st.selectbox(
-        "جنسیت خود را انتخاب کنید:",
-        ("مرد", "زن"),
-        key="gender_input",
-        index=None,
-        placeholder="انتخاب کنید..."
-    )
+    st.selectbox("جنسیت خود را انتخاب کنید:", ("مرد", "زن"), key="gender_input", index=None, placeholder="انتخاب کنید...")
     if st.button("مرحله بعد", use_container_width=True, type="primary"):
-        if st.session_state.get("gender_input"):
+        if st.session_state.gender_input:
             st.session_state.form_step = 2
             st.rerun()
         else:
@@ -65,9 +47,8 @@ def display_form_step_2():
         st.number_input("قد شما (سانتی‌متر)", min_value=100, max_value=250, key="height_input")
     with col2:
         st.number_input("وزن فعلی شما (کیلوگرم)", min_value=30.0, max_value=200.0, key="current_weight_input", format="%.1f")
-    
     if st.button("مرحله بعد", use_container_width=True, type="primary"):
-        if st.session_state.get("height_input", 0) > 100 and st.session_state.get("current_weight_input", 0) > 30:
+        if st.session_state.height_input >= 100 and st.session_state.current_weight_input >= 30:
             st.session_state.form_step = 3
             st.rerun()
         else:
@@ -75,15 +56,12 @@ def display_form_step_2():
 
 def display_form_step_3():
     st.header("مرحله ۳ از ۳: هدف شما")
-    st.number_input(
-        "وزن هدف شما (کیلوگرم)", 
-        min_value=30.0, 
-        max_value=200.0, 
-        key="target_weight_input", 
-        format="%.1f",
-        on_change=submit_form_and_start_chat # شروع خودکار گفتگو
-    )
-    st.caption("بعد از وارد کردن وزن هدف، گفتگو به صورت خودکار شروع می‌شود.")
+    st.number_input("وزن هدف شما (کیلوگرم)", min_value=30.0, max_value=200.0, key="target_weight_input", format="%.1f")
+    if st.button("پایان و شروع گفتگو", use_container_width=True, type="primary"):
+        if st.session_state.target_weight_input >= 30:
+            submit_form_and_start_chat()
+        else:
+            st.warning("لطفاً وزن هدف خود را به درستی وارد کنید.")
 
 def display_chat_interface():
     st.title("💬 مصاحبه هوشمند")
@@ -174,14 +152,18 @@ def main():
         query_params = st.query_params
         user_id = query_params.get("user_id")
         first_name = query_params.get("first_name")
-
         st.session_state.telegram_user_id = int(user_id) if user_id else 99999
         st.session_state.first_name = first_name or "کاربر تستی"
         
-        st.session_state.messages = []
-        st.session_state.plan_received = False
-        st.session_state.form_step = 1
-        st.session_state.initialized = True
+        # مقداردهی اولیه تمام کلیدها برای جلوگیری از خطا
+        st.session_state.setdefault('gender_input', None)
+        st.session_state.setdefault('height_input', 170)
+        st.session_state.setdefault('current_weight_input', 70.0)
+        st.session_state.setdefault('target_weight_input', 65.0)
+        st.session_state.setdefault('messages', [])
+        st.session_state.setdefault('plan_received', False)
+        st.session_state.setdefault('form_step', 1)
+        st.session_state.setdefault('initialized', True)
     
     # نمایش صفحه مناسب بر اساس مرحله فعلی
     if st.session_state.form_step == 1:
