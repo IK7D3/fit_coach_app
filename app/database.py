@@ -1,8 +1,18 @@
 # app/database.py
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-DATABASE_URL = "postgresql://fit_coach_db_user:bqzDQR2djMnTWOahbWvSM8BIlJ2OHirO@dpg-d2jmobqli9vc73c0f740-a/fit_coach_db"
+# خواندن آدرس دیتابیس از متغیر محیطی که در Render تنظیم کردیم
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_engine(DATABASE_URL)
+# اگر متغیر محیطی وجود نداشت (مثلاً در حال تست روی کامپیوتر شخصی بودیم)
+# از دیتابیس محلی SQLite استفاده کن
+if DATABASE_URL is None:
+    print("WARNING: DATABASE_URL environment variable not set. Using local SQLite database.")
+    DATABASE_URL = "sqlite:///./fitness_app.db"
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
