@@ -22,7 +22,7 @@ async def register_user(user_id: int, first_name: str):
     """در پشت صحنه، کاربر را در سیستم ما ثبت‌نام می‌کند."""
     try:
         payload = {"telegram_user_id": user_id, "first_name": first_name}
-        response = requests.post(f"{API_BASE_URL}/register", json=payload, timeout=20)
+        response = requests.post(f"{API_BASE_URL}/register", json=payload, timeout=30)
         response.raise_for_status()
         logger.info(f"User {user_id} registered successfully.")
         return True

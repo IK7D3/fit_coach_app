@@ -14,25 +14,31 @@ def submit_form_and_start_chat():
     """
     این تابع به صورت خودکار بعد از پر شدن آخرین فیلد فرم اجرا می‌شود.
     """
-    # یک بررسی نهایی برای اطمینان از پر بودن تمام فیلدها
-    if not all([st.session_state.gender_input, st.session_state.height_input > 100, st.session_state.current_weight_input > 30, st.session_state.target_weight_input > 30]):
-        st.warning("لطفاً تمام فیلدها را به درستی پر کنید.")
+    # دسترسی امن به متغیرهای حافظه با .get() برای جلوگیری از خطا
+    gender = st.session_state.get("gender_input")
+    height = st.session_state.get("height_input", 0)
+    current_weight = st.session_state.get("current_weight_input", 0)
+    target_weight = st.session_state.get("target_weight_input", 0)
+
+    if not all([gender, height > 100, current_weight > 30, target_weight > 30]):
+        # این پیام فقط در صورتی نمایش داده می‌شود که کاربر مقادیر را ناقص وارد کند
+        st.toast("لطفاً وزن هدف را به درستی وارد کنید تا ادامه دهیم.")
         return
 
     # ارسال اطلاعات به بک‌اند
     with st.spinner("در حال ذخیره اطلاعات و آماده‌سازی گفتگو..."):
         payload = {
             "telegram_user_id": st.session_state.telegram_user_id,
-            "gender": st.session_state.gender_input.lower(),
-            "height_cm": st.session_state.height_input,
-            "current_weight_kg": st.session_state.current_weight_input,
-            "target_weight_kg": st.session_state.target_weight_input
+            "gender": gender.lower(),
+            "height_cm": height,
+            "current_weight_kg": current_weight,
+            "target_weight_kg": target_weight
         }
         try:
             response = requests.post(FORM_API_URL, json=payload)
             response.raise_for_status()
             st.session_state.form_step = 4 # برو به مرحله چت
-            st.rerun() # اجرای مجدد برای نمایش صفحه چت
+            st.rerun()
         except requests.exceptions.RequestException as e:
             st.error(f"خطا در ذخیره اطلاعات: {e}")
 
@@ -46,7 +52,7 @@ def display_form_step_1():
         placeholder="انتخاب کنید..."
     )
     if st.button("مرحله بعد", use_container_width=True, type="primary"):
-        if st.session_state.gender_input:
+        if st.session_state.get("gender_input"):
             st.session_state.form_step = 2
             st.rerun()
         else:
@@ -61,7 +67,7 @@ def display_form_step_2():
         st.number_input("وزن فعلی شما (کیلوگرم)", min_value=30.0, max_value=200.0, key="current_weight_input", format="%.1f")
     
     if st.button("مرحله بعد", use_container_width=True, type="primary"):
-        if st.session_state.height_input > 100 and st.session_state.current_weight_input > 30:
+        if st.session_state.get("height_input", 0) > 100 and st.session_state.get("current_weight_input", 0) > 30:
             st.session_state.form_step = 3
             st.rerun()
         else:
@@ -74,11 +80,10 @@ def display_form_step_3():
         min_value=30.0, 
         max_value=200.0, 
         key="target_weight_input", 
-        format="%.1f"
+        format="%.1f",
+        on_change=submit_form_and_start_chat # شروع خودکار گفتگو
     )
-    # دکمه نهایی برای ارسال فرم
-    if st.button("پایان و شروع گفتگو", use_container_width=True, type="primary"):
-        submit_form_and_start_chat()
+    st.caption("بعد از وارد کردن وزن هدف، گفتگو به صورت خودکار شروع می‌شود.")
 
 def display_chat_interface():
     st.title("💬 مصاحبه هوشمند")
@@ -163,7 +168,7 @@ def load_chat_history():
 # --- منطق اصلی برنامه ---
 def main():
     st.set_page_config(page_title="مربی هوشمند", page_icon="🤖")
-    st.title("به دستیار هوشمند مربی خوش آمدید! �")
+    st.title("به دستیار هوشمند مربی خوش آمدید! 🤖")
 
     if 'initialized' not in st.session_state:
         query_params = st.query_params
@@ -173,12 +178,6 @@ def main():
         st.session_state.telegram_user_id = int(user_id) if user_id else 99999
         st.session_state.first_name = first_name or "کاربر تستی"
         
-        # --- حل مشکل AttributeError: مقداردهی اولیه تمام کلیدها ---
-        st.session_state.gender_input = None
-        st.session_state.height_input = 170 # یک مقدار پیش‌فرض منطقی
-        st.session_state.current_weight_input = 70.0 # یک مقدار پیش‌فرض منطقی
-        st.session_state.target_weight_input = 65.0 # یک مقدار پیش‌فرض منطقی
-
         st.session_state.messages = []
         st.session_state.plan_received = False
         st.session_state.form_step = 1
@@ -192,15 +191,14 @@ def main():
     elif st.session_state.form_step == 3:
         display_form_step_3()
     elif st.session_state.form_step == 4:
-        # اگر تاریخچه خالی بود، اولین پیام را از بک‌اند بگیر
         if not st.session_state.messages:
+            # اولین پیام را فقط یک بار ارسال می‌کنیم
             send_message_to_backend("start")
         
-        if st.session_state.plan_received:
-            display_workout_plan(st.session_state.plan_data)
+        if st.session_state.get("plan_received", False):
+            display_workout_plan(st.session_state.get("plan_data"))
         else:
             display_chat_interface()
-
 
 if __name__ == "__main__":
     main()
