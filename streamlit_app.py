@@ -29,25 +29,19 @@ def display_landing_screen():
         st.rerun() # اجرای مجدد اسکریپت برای نمایش صفحه چت
 
 def display_chat_interface():
-    """نمایش رابط کاربری چت."""
     st.title("💬 مصاحبه هوشمند")
     st.caption("لطفاً به سوالات دستیار هوشمند پاسخ دهید...")
 
-    # نمایش تاریخچه چت
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # دریافت ورودی از کاربر
     if prompt := st.chat_input("پاسخ خود را اینجا بنویسید..."):
-        # اضافه کردن پیام کاربر به تاریخچه و نمایش آن
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
-
-        # ارسال پیام به بک‌اند و دریافت پاسخ AI
         send_message_to_backend(prompt)
-        st.rerun() # اجرای مجدد برای نمایش پاسخ AI
+        st.rerun()
 
 def display_workout_plan():
     """نمایش برنامه تمرینی نهایی."""
@@ -103,50 +97,34 @@ def load_chat_history():
         response.raise_for_status()
         history = response.json()
         
-        # تبدیل فرمت تاریخچه دریافتی به فرمت مورد نیاز استریم‌لیت
         formatted_history = []
         for msg in history:
             role = "user" if msg["sender"] == "user" else "assistant"
             formatted_history.append({"role": role, "content": msg["message_text"]})
         
         st.session_state.messages = formatted_history
-        return True # تاریخچه با موفقیت بارگذاری شد
     except requests.exceptions.RequestException as e:
         st.error(f"خطا در بارگذاری تاریخچه: {e}")
-        return False # خطایی رخ داد
 
 
 # --- منطق اصلی برنامه ---
 def main():
     st.set_page_config(page_title="مربی هوشمند", page_icon="🤖")
 
-    # --- بخش کلیدی جدید: خواندن اطلاعات از URL ---
-    query_params = st.query_params
-    
-    # مقداردهی اولیه session_state
     if 'initialized' not in st.session_state:
-        user_id_from_url = query_params.get("user_id")
-        first_name_from_url = query_params.get("first_name")
+        query_params = st.query_params
+        user_id = query_params.get("user_id")
+        first_name = query_params.get("first_name")
 
-        if user_id_from_url:
-            st.session_state.telegram_user_id = int(user_id_from_url)
-            st.session_state.first_name = first_name_from_url or "کاربر"
-        else:
-            # این بخش برای تست مستقیم استریم‌لیت باقی می‌ماند
-            st.session_state.telegram_user_id = 99999 # یک ID تستی
-            st.session_state.first_name = "کاربر تستی"
-
-        st.session_state.messages = []
-        st.session_state.plan_received = False
-        st.session_state.initialized = True # برای جلوگیری از اجرای مجدد این بخش
+        st.session_state.telegram_user_id = int(user_id) if user_id else 99999
+        st.session_state.first_name = first_name or "کاربر تستی"
         
-        # --- حل مشکل سوم: بارگذاری تاریخچه ---
-        if not load_chat_history():
-             # اگر تاریخچه وجود نداشت یا خطایی رخ داد، گفتگوی جدید شروع می‌کنیم
-             send_message_to_backend("start")
+        # فقط تاریخچه را بارگذاری می‌کنیم
+        load_chat_history()
+        
+        st.session_state.initialized = True
+        st.session_state.plan_received = False # باید چک کنیم آیا برنامه قبلاً ساخته شده یا نه
 
-
-    # نمایش صفحه مناسب بر اساس وضعیت فعلی کاربر
     if st.session_state.plan_received:
         display_workout_plan()
     else:

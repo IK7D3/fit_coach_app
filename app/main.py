@@ -16,6 +16,10 @@ app = FastAPI(title="Fit Coach AI API")
 chat_sessions = {}
 
 # --- مدل‌های Pydantic ---
+class RegisterRequest(BaseModel):
+    telegram_user_id: int
+    first_name: str | None = None
+
 class ChatRequest(BaseModel):
     telegram_user_id: int
     message: str
@@ -39,6 +43,36 @@ def get_db():
         db.close()
 
 # --- API Endpoints ---
+
+@app.post("/register")
+def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
+    """
+    کاربر را ثبت‌نام کرده و گفتگوی اولیه را در دیتابیس ایجاد می‌کند.
+    """
+    user = db.query(models.User).filter(models.User.telegram_user_id == request.telegram_user_id).first()
+    
+    # اگر کاربر وجود نداشت، آن را می‌سازیم و اولین گفتگو را ایجاد می‌کنیم
+    if not user:
+        # ساخت کاربر
+        user = models.User(telegram_user_id=request.telegram_user_id, first_name=request.first_name)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        # ایجاد اولین گفتگو در پشت صحنه
+        assistant = FitnessCoachAssistant()
+        
+        # ۱. ذخیره پیام اولیه کاربر
+        user_chat = models.ChatHistory(user_id=user.id, sender="user", message_text="start")
+        db.add(user_chat)
+        
+        # ۲. گرفتن و ذخیره پاسخ AI
+        ai_response = assistant.get_response("start")
+        ai_chat = models.ChatHistory(user_id=user.id, sender="ai", message_text=ai_response)
+        db.add(ai_chat)
+        db.commit()
+
+    return {"status": "success", "message": "User registered and conversation initiated."}
 
 @app.post("/chat", response_model=ChatResponse)
 def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
