@@ -5,9 +5,9 @@ from pydantic import BaseModel
 from typing import List
 
 # وارد کردن کلاس‌ها و توابع از فایل‌های دیگر پروژه
-import models
-from database import SessionLocal, engine
-from chatbot import FitnessCoachAssistant
+from . import models
+from .database import SessionLocal, engine
+from .chatbot import FitnessCoachAssistant
 
 models.Base.metadata.create_all(bind=engine)
 
