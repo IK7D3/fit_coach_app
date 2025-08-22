@@ -1,32 +1,70 @@
 # streamlit_app.py
 import streamlit as st
 import requests
-import random
-import time
 
 # --- تنظیمات اولیه ---
-# آدرس API که در مرحله قبل با FastAPI ساختیم
-API_URL = "https://fitcoachapp-production.up.railway.app/chat"
-HISTORY_API_URL = "https://fitcoachapp-production.up.railway.app/chat/{user_id}/history"
+API_BASE_URL = "https://fitcoachapp-production.up.railway.app" # آدرس پایه API شما
+FORM_API_URL = f"{API_BASE_URL}/users/form-data"
+CHAT_API_URL = f"{API_BASE_URL}/chat"
+HISTORY_API_URL = f"{API_BASE_URL}/chat/{{user_id}}/history"
 
 # --- توابع اصلی ---
 
-def display_landing_screen():
-    """نمایش صفحه ورودی برای جذب کاربر."""
-    st.title("به دستیار هوشمند مربی خوش آمدید! 🤖")
-    st.image("https://placehold.co/600x300/DBF1FF/3D4A59?text=Fit+Coach+AI", use_container_width=True)
-    st.header("یک برنامه تمرینی هوشمند و رایگان دریافت کنید")
-    st.markdown("""
-    با پاسخ به چند سوال ساده، دستیار هوشمند ما یک برنامه تمرینی اولیه و مؤثر،
-    متناسب با اهداف و سطح شما طراحی می‌کند.
-    """)
+def display_form_step_1():
+    st.header("مرحله ۱: جنسیت")
+    st.selectbox(
+        "جنسیت خود را انتخاب کنید:",
+        ("مرد", "زن"),
+        key="gender_input",
+        index=None,
+        placeholder="انتخاب کنید..."
+    )
+    if st.button("مرحله بعد", use_container_width=True, type="primary"):
+        if st.session_state.gender_input:
+            st.session_state.form_step = 2
+            st.rerun()
+        else:
+            st.warning("لطفاً جنسیت خود را انتخاب کنید.")
+
+def display_form_step_2():
+    st.header("مرحله ۲: مشخصات فیزیکی")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.number_input("قد شما (سانتی‌متر)", min_value=100, max_value=250, key="height_input")
+    with col2:
+        st.number_input("وزن فعلی شما (کیلوگرم)", min_value=30.0, max_value=200.0, key="current_weight_input", format="%.1f")
     
-    if st.button("🚀 شروع مصاحبه هوشمند", use_container_width=True):
-        # وقتی کاربر کلیک کرد، وضعیت را تغییر می‌دهیم تا وارد صفحه چت شویم
-        st.session_state['chat_started'] = True
-        # ارسال پیام اولیه برای شروع گفتگو از طرف ربات
-        send_message_to_backend("start")
-        st.rerun() # اجرای مجدد اسکریپت برای نمایش صفحه چت
+    if st.button("مرحله بعد", use_container_width=True, type="primary"):
+        if st.session_state.height_input > 100 and st.session_state.current_weight_input > 30:
+            st.session_state.form_step = 3
+            st.rerun()
+        else:
+            st.warning("لطفاً قد و وزن خود را به درستی وارد کنید.")
+
+def display_form_step_3():
+    st.header("مرحله ۳: هدف شما")
+    st.number_input("وزن هدف شما (کیلوگرم)", min_value=30.0, max_value=200.0, key="target_weight_input", format="%.1f")
+
+    if st.button("شروع گفتگوی هوشمند", use_container_width=True, type="primary"):
+        if st.session_state.target_weight_input > 30:
+            # ارسال اطلاعات به بک‌اند
+            with st.spinner("در حال ذخیره اطلاعات..."):
+                payload = {
+                    "telegram_user_id": st.session_state.telegram_user_id,
+                    "gender": st.session_state.gender_input.lower(),
+                    "height_cm": st.session_state.height_input,
+                    "current_weight_kg": st.session_state.current_weight_input,
+                    "target_weight_kg": st.session_state.target_weight_input
+                }
+                try:
+                    response = requests.post(FORM_API_URL, json=payload)
+                    response.raise_for_status()
+                    st.session_state.form_step = 4 # برو به مرحله چت
+                    st.rerun()
+                except requests.exceptions.RequestException as e:
+                    st.error(f"خطا در ذخیره اطلاعات: {e}")
+        else:
+            st.warning("لطفاً وزن هدف خود را به درستی وارد کنید.")
 
 def display_chat_interface():
     st.title("💬 مصاحبه هوشمند")
@@ -110,7 +148,9 @@ def load_chat_history():
 # --- منطق اصلی برنامه ---
 def main():
     st.set_page_config(page_title="مربی هوشمند", page_icon="🤖")
+    st.title("به دستیار هوشمند مربی خوش آمدید! �")
 
+    # مقداردهی اولیه session_state
     if 'initialized' not in st.session_state:
         query_params = st.query_params
         user_id = query_params.get("user_id")
@@ -119,16 +159,27 @@ def main():
         st.session_state.telegram_user_id = int(user_id) if user_id else 99999
         st.session_state.first_name = first_name or "کاربر تستی"
         
-        # فقط تاریخچه را بارگذاری می‌کنیم
-        load_chat_history()
-        
+        st.session_state.messages = []
+        st.session_state.plan_received = False
+        st.session_state.form_step = 1 # شروع از مرحله اول فرم
         st.session_state.initialized = True
-        st.session_state.plan_received = False # باید چک کنیم آیا برنامه قبلاً ساخته شده یا نه
-
-    if st.session_state.plan_received:
-        display_workout_plan()
-    else:
-        display_chat_interface()
+    
+    # نمایش صفحه مناسب بر اساس مرحله فعلی
+    if st.session_state.form_step == 1:
+        display_form_step_1()
+    elif st.session_state.form_step == 2:
+        display_form_step_2()
+    elif st.session_state.form_step == 3:
+        display_form_step_3()
+    elif st.session_state.form_step == 4:
+        # اگر تاریخچه خالی بود، اولین پیام را از بک‌اند بگیر
+        if not st.session_state.messages:
+            send_message_to_backend("start")
+        
+        if st.session_state.plan_received:
+            display_workout_plan(st.session_state.plan_data)
+        else:
+            display_chat_interface()
 
 
 if __name__ == "__main__":
