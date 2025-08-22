@@ -6,7 +6,7 @@ import time
 
 # --- تنظیمات اولیه ---
 # آدرس API که در مرحله قبل با FastAPI ساختیم
-API_URL = "https://fit-coach-app.onrender.com/chat"
+API_URL = "https://fitcoachapp-production.up.railway.app/chat"
 
 # --- توابع اصلی ---
 
