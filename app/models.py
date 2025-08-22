@@ -9,6 +9,7 @@ from sqlalchemy import (
     BigInteger,
     ForeignKey,
     Text,
+    Float
 )
 from sqlalchemy.orm import relationship, declarative_base
 
@@ -18,7 +19,8 @@ Base = declarative_base()
 
 class User(Base):
     """
-    مدل کاربران. هر کاربری که ربات را استارت می‌کند اینجا ذخیره می‌شود.
+    مدل کاربران (نسخه جدید)
+    شامل تمام اطلاعات فیزیکی و اهداف کاربر.
     """
     __tablename__ = "users"
 
@@ -27,11 +29,15 @@ class User(Base):
     first_name = Column(String(255))
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+    # --- ستون‌های جدید برای اطلاعات کاربر ---
+    gender = Column(String(50), nullable=True)  # e.g., 'male', 'female'
+    height_cm = Column(Float, nullable=True)
+    current_weight_kg = Column(Float, nullable=True)
+    target_weight_kg = Column(Float, nullable=True)
+
     # تعریف روابط (Relationships)
     chats = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
     plan = relationship("GeneratedPlan", uselist=False, back_populates="user", cascade="all, delete-orphan")
-
-
 class ChatHistory(Base):
     """
     مدل تاریخچه چت. تمام مکالمات کاربر با AI اینجا ذخیره می‌شود.
