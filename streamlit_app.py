@@ -16,13 +16,17 @@ def submit_form_and_start_chat():
     """
     with st.spinner("در حال ذخیره اطلاعات و آماده‌سازی گفتگو..."):
         payload = {
-            "telegram_user_id": st.session_state.telegram_user_id,
-            "gender": st.session_state.gender_input,
-            "height_cm": st.session_state.height_input,
-            "current_weight_kg": st.session_state.current_weight_input,
-            "target_weight_kg": st.session_state.target_weight_input
+            "telegram_user_id": st.session_state.get("telegram_user_id"),
+            "gender": st.session_state.get("gender_input"),
+            "height_cm": st.session_state.get("height_input"),
+            "current_weight_kg": st.session_state.get("current_weight_input"),
+            "target_weight_kg": st.session_state.get("target_weight_input")
         }
         try:
+            if not all([payload["gender"], payload["height_cm"], payload["current_weight_kg"], payload["target_weight_kg"]]):
+                st.error("لطفاً همه اطلاعات فرم را کامل کنید.")
+                return
+
             response = requests.post(FORM_API_URL, json=payload)
             response.raise_for_status()
             st.session_state.form_step = 4 # برو به مرحله چت
@@ -58,7 +62,7 @@ def display_form_step_3():
     st.header("مرحله ۳ از ۳: هدف شما")
     st.number_input("وزن هدف شما (کیلوگرم)", min_value=30.0, max_value=200.0, key="target_weight_input", format="%.1f")
     if st.button("پایان و شروع گفتگو", use_container_width=True, type="primary"):
-        if st.session_state.target_weight_input >= 30:
+        if st.session_state.get("target_weight_input", 0) >= 30:
             submit_form_and_start_chat()
         else:
             st.warning("لطفاً وزن هدف خود را به درستی وارد کنید.")

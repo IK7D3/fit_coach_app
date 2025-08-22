@@ -70,13 +70,13 @@ class FitnessCoachAssistant:
     def __init__(self):
         self.llm = ChatCohere(model="command-r", temperature=0.7)
         self.memory = ConversationBufferMemory(return_messages=True, memory_key="history")
+        # ما یک قالب اولیه برای پرامپت می‌سازیم که بعداً فرمت خواهد شد
         self.prompt_template = ChatPromptTemplate.from_messages([
-            ("system", SYSTEM_PROMPT),
+            ("system", "{system_prompt}"), # اینجا یک متغیر جدید اضافه کردیم
             MessagesPlaceholder(variable_name="history"),
             ("human", "{input}"),
         ])
         
-        # ساخت زنجیره جدید با LCEL
         self.chain = (
             RunnablePassthrough.assign(
                 history=lambda x: self.memory.chat_memory.messages,
@@ -86,20 +86,16 @@ class FitnessCoachAssistant:
             | StrOutputParser()
         )
 
-    def get_response(self, user_input: str, formatted_prompt_str: str = None) -> str:
+    def get_response(self, user_input: str, formatted_prompt: str) -> str:
         """
-        یک ورودی از کاربر می‌گیرد و پاسخ AI را برمی‌گرداند.
-        اگر پرامپت فرمت‌شده ارسال شود، از آن استفاده می‌کند.
+        یک ورودی از کاربر و پرامپت کامل شده را می‌گیرد و پاسخ AI را برمی‌گرداند.
         """
-        # اگر پرامپت جدیدی برای فرمت کردن ارسال شده، آن را آپدیت می‌کنیم
-        if formatted_prompt_str:
-            self.prompt_template.messages[0].prompt.template = formatted_prompt_str
+        response = self.chain.invoke({
+            "input": user_input,
+            "system_prompt": formatted_prompt # پرامپت کامل شده را به زنجیره می‌دهیم
+        })
         
-        response = self.chain.invoke({"input": user_input})
-        
-        # ذخیره کردن دستی مکالمه در حافظه
         self.memory.save_context({"input": user_input}, {"output": response})
-        
         return response
 
     @staticmethod
@@ -111,13 +107,15 @@ class FitnessCoachAssistant:
             if "```json" in ai_response:
                 clean_response = ai_response.split("```json")[1].split("```")[0].strip()
             else:
-                # پیدا کردن اولین '{' و آخرین '}' برای استخراج JSON
                 start_index = ai_response.find('{')
                 end_index = ai_response.rfind('}')
                 if start_index != -1 and end_index != -1:
                     clean_response = ai_response[start_index : end_index + 1]
                 else:
                     return None
+            return json.loads(clean_response)
+        except (json.JSONDecodeError, IndexError):
+            return None
             
             return json.loads(clean_response)
         except (json.JSONDecodeError, IndexError):
@@ -126,30 +124,55 @@ class FitnessCoachAssistant:
 
 # --- بخش تست (برای اجرای مستقیم این فایل) ---
 if __name__ == "__main__":
-    print("Fitness Coach Assistant Test...")
-    print("برای شروع 'start' را تایپ کنید و برای خروج 'exit'.")
+    print("--- Fitness Coach Assistant Local Test ---")
     
-    # اطمینان از وجود کلید API
     if not os.getenv("COHERE_API_KEY"):
-        print("\n!!! هشدار: لطفاً کلید COHERE_API_KEY خود را به عنوان متغیر محیطی تنظیم کنید.")
-        print("os.environ['COHERE_API_KEY'] = 'YOUR_COHERE_API_KEY'")
+        print("\n!!! هشدار: لطفاً کلید COHERE_API_KEY خود را در کد قرار دهید.")
     else:
+        # ۱. شبیه‌سازی داده‌هایی که از فرم و دیتابیس می‌آیند
+        mock_user_data = (
+            "- نام: ایمان\n"
+            "- جنسیت: مرد\n"
+            "- قد: 180 سانتی‌متر\n"
+            "- وزن فعلی: 85 کیلوگرم\n"
+            "- وزن هدف: 80 کیلوگرم"
+        )
+        mock_exercises = (
+            "- پرس سینه هالتر (برای گروه عضلانی: سینه)\n"
+            "- اسکات با هالتر (برای گروه عضلانی: پا)\n"
+            "- جلو بازو دمبل (برای گروه عضلانی: جلو بازو)"
+        )
+
+        # ۲. فرمت کردن پرامپت اصلی با داده‌های شبیه‌سازی شده
+        formatted_system_prompt = SYSTEM_PROMPT.format(
+            user_data=mock_user_data,
+            available_exercises=mock_exercises
+        )
+
         assistant = FitnessCoachAssistant()
         
+        print("✅ دستیار هوشمند آماده است. گفتگو را شروع کنید (برای خروج 'exit' را تایپ کنید).")
+        print("------------------------------------------------------------------")
+
+        # ۳. شروع گفتگو با ارسال اولین پیام ("start")
+        first_ai_message = assistant.get_response("start", formatted_system_prompt)
+        print(f"AI: {first_ai_message}")
+
+        # ۴. ادامه گفتگو در یک حلقه
         while True:
             user_message = input("You: ")
             if user_message.lower() == 'exit':
                 break
             
-            ai_message = assistant.get_response(user_message)
+            # برای پیام‌های بعدی، دیگر نیازی به ارسال پرامپت فرمت‌شده نیست
+            ai_message = assistant.get_response(user_message, formatted_system_prompt)
             
-            # چک می‌کنیم آیا پاسخ نهایی JSON است یا نه
-            plan_params = assistant.parse_final_response(ai_message)
+            plan_data = assistant.parse_final_response(ai_message)
             
-            if plan_params:
+            if plan_data:
                 print("\n--- مکالمه تمام شد ---")
-                print("AI: بر اساس اطلاعاتت، این پارامترها برای ساخت برنامه استخراج شد:")
-                print(plan_params)
+                print("AI: برنامه تمرینی زیر بر اساس گفتگوی ما تولید شد:")
+                print(json.dumps(plan_data, indent=2, ensure_ascii=False))
                 print("----------------------\n")
                 break
             else:
