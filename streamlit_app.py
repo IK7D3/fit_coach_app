@@ -40,7 +40,6 @@ def display_form_step_1():
     if st.button("مرحله بعد", use_container_width=True, type="primary"):
         if st.session_state.gender_input:
             st.session_state.form_step = 2
-            st.rerun()
         else:
             st.warning("لطفاً جنسیت خود را انتخاب کنید.")
 
@@ -54,7 +53,7 @@ def display_form_step_2():
     if st.button("مرحله بعد", use_container_width=True, type="primary"):
         if st.session_state.height_input >= 100 and st.session_state.current_weight_input >= 30:
             st.session_state.form_step = 3
-            st.rerun()
+
         else:
             st.warning("لطفاً قد و وزن خود را به درستی وارد کنید.")
 
@@ -186,6 +185,6 @@ def main():
         else:
             display_chat_interface()
     st.write("DEBUG - session_state:", dict(st.session_state))
-    
+
 if __name__ == "__main__":
     main()
