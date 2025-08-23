@@ -185,22 +185,6 @@ def main():
         else:
             display_chat_interface()
     
-    # نمایش صفحه مناسب بر اساس مرحله فعلی
-    if st.session_state.form_step == 1:
-        display_form_step_1()
-    elif st.session_state.form_step == 2:
-        display_form_step_2()
-    elif st.session_state.form_step == 3:
-        display_form_step_3()
-    elif st.session_state.form_step == 4:
-        if not st.session_state.messages:
-            # اولین پیام را فقط یک بار ارسال می‌کنیم
-            send_message_to_backend("start")
-        
-        if st.session_state.get("plan_received", False):
-            display_workout_plan(st.session_state.get("plan_data"))
-        else:
-            display_chat_interface()
 
     st.write("DEBUG - session_state:", dict(st.session_state))
     
