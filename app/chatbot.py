@@ -3,7 +3,6 @@ import os
 import json
 from langchain_cohere import ChatCohere
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.memory import ConversationBufferMemory
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain.memory import ConversationSummaryBufferMemory
@@ -70,8 +69,6 @@ class FitnessCoachAssistant:
     """
     def __init__(self):
         self.llm = ChatCohere(model="command-r", temperature=0.7)
-        self.memory = ConversationBufferMemory(return_messages=True, memory_key="history")
-        # ما یک قالب اولیه برای پرامپت می‌سازیم که بعداً فرمت خواهد شد
         self.memory = ConversationSummaryBufferMemory(
             llm=self.llm, 
             max_token_limit=1000, 
@@ -123,11 +120,6 @@ class FitnessCoachAssistant:
             return json.loads(clean_response)
         except (json.JSONDecodeError, IndexError):
             return None
-            
-            return json.loads(clean_response)
-        except (json.JSONDecodeError, IndexError):
-            return None
-
 
 # --- بخش تست (برای اجرای مستقیم این فایل) ---
 if __name__ == "__main__":
