@@ -58,32 +58,23 @@ def get_db():
 @app.post("/register")
 def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
     """
-    کاربر را ثبت‌نام کرده و گفتگوی اولیه را در دیتابیس ایجاد می‌کند.
+    کاربر را فقط در صورت عدم وجود، در دیتابیس ثبت‌نام می‌کند.
+    این تابع دیگر مسئول شروع گفتگو نیست.
     """
     user = db.query(models.User).filter(models.User.telegram_user_id == request.telegram_user_id).first()
     
-    # اگر کاربر وجود نداشت، آن را می‌سازیم و اولین گفتگو را ایجاد می‌کنیم
+    # اگر کاربر وجود نداشت، آن را می‌سازیم
     if not user:
-        # ساخت کاربر
-        user = models.User(telegram_user_id=request.telegram_user_id, first_name=request.first_name)
+        user = models.User(
+            telegram_user_id=request.telegram_user_id, 
+            first_name=request.first_name
+        )
         db.add(user)
         db.commit()
         db.refresh(user)
+        return {"status": "success", "message": "User created successfully."}
 
-        # ایجاد اولین گفتگو در پشت صحنه
-        assistant = FitnessCoachAssistant()
-        
-        # ۱. ذخیره پیام اولیه کاربر
-        user_chat = models.ChatHistory(user_id=user.id, sender="user", message_text="start")
-        db.add(user_chat)
-        
-        # ۲. گرفتن و ذخیره پاسخ AI
-        ai_response = assistant.get_response("start")
-        ai_chat = models.ChatHistory(user_id=user.id, sender="ai", message_text=ai_response)
-        db.add(ai_chat)
-        db.commit()
-
-    return {"status": "success", "message": "User registered and conversation initiated."}
+    return {"status": "success", "message": "User already exists."}
 
 @app.post("/users/form-data")
 def update_user_form_data(form_data: UserDataForm, db: Session = Depends(get_db)):

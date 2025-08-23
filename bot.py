@@ -30,15 +30,29 @@ async def get_user_status(user_id: int) -> dict:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    این تابع زمانی اجرا می‌شود که کاربر دستور /start را ارسال کند.
+    کاربر را ثبت‌نام کرده و سپس دکمه وب‌اپ را نمایش می‌دهد.
     """
     user = update.effective_user
     logger.info(f"User {user.id} ({user.first_name}) started the bot.")
     
-    # --- بخش کلیدی جدید: بررسی وضعیت کاربر ---
+    # --- بخش کلیدی جدید: ثبت‌نام فوری کاربر ---
+    try:
+        register_payload = {
+            "telegram_user_id": user.id,
+            "first_name": user.first_name
+        }
+        response = requests.post(f"{API_BASE_URL}/register", json=register_payload, timeout=10)
+        response.raise_for_status() # بررسی خطاهای احتمالی سرور
+        logger.info(f"User {user.id} registered or already exists.")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to register user {user.id}. Error: {e}")
+        await update.message.reply_text("متاسفانه در حال حاضر مشکلی در اتصال به سرور وجود دارد. لطفاً چند دقیقه دیگر دوباره امتحان کنید.")
+        return # اجرای تابع متوقف می‌شود
+    # --- پایان بخش ثبت‌نام ---
+
+    # پس از ثبت‌نام موفق، دکمه را نمایش می‌دهیم
     status = await get_user_status(user.id)
     
-    # بر اساس وضعیت، پارامترهای مختلفی به URL اضافه می‌کنیم
     params = {
         "user_id": user.id,
         "first_name": urllib.parse.quote(user.first_name or "کاربر")
