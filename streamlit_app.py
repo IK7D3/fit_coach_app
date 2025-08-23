@@ -4,19 +4,43 @@ import requests
 
 # --- تنظیمات اولیه ---
 API_BASE_URL = "https://fitcoachapp-production.up.railway.app" # آدرس پایه API شما
+REGISTER_API_URL = f"{API_BASE_URL}/register"
 FORM_API_URL = f"{API_BASE_URL}/users/form-data"
 CHAT_API_URL = f"{API_BASE_URL}/chat"
 HISTORY_API_URL = f"{API_BASE_URL}/chat/{{user_id}}/history"
 
 # --- توابع اصلی ---
-
+def register_user(user_id: int, first_name: str):
+    """
+    کاربر را به محض باز شدن برنامه در بک‌اند ثبت‌نام می‌کند.
+    اگر کاربر از قبل وجود داشته باشد، هیچ اتفاقی نمی‌افتد.
+    """
+    try:
+        payload = {"telegram_user_id": user_id, "first_name": first_name}
+        response = requests.post(REGISTER_API_URL, json=payload)
+        response.raise_for_status()  # در صورت بروز خطا، آن را نمایش می‌دهد
+    except requests.exceptions.RequestException as e:
+        # اگر سرور در دسترس نباشد، برنامه متوقف شده و به کاربر اطلاع می‌دهد
+        st.error(f"خطا در اتصال به سرور. لطفاً بعداً دوباره امتحان کنید. {e}")
+        st.stop()
+        
 def initialize_session_state():
     """تمام متغیرهای لازم در حافظه را مقداردهی اولیه می‌کند."""
     if 'initialized' not in st.session_state:
         query_params = st.query_params
         user_id = query_params.get("user_id")
         first_name = query_params.get("first_name")
-        st.session_state.telegram_user_id = int(user_id) if user_id else 99999
+
+        # --- بخش اصلاح شده ---
+        if not user_id:
+            st.error("دسترسی نامعتبر است. لطفاً برنامه را از طریق ربات تلگرام باز کنید.")
+            st.stop() # اگر user_id وجود نداشت، برنامه متوقف می‌شود
+
+        # به محض دریافت اطلاعات، کاربر را در سیستم ثبت‌نام می‌کنیم
+        register_user(int(user_id), first_name or "کاربر")
+        # --- پایان بخش اصلاح شده ---
+
+        st.session_state.telegram_user_id = int(user_id)
         st.session_state.first_name = first_name or "کاربر تستی"
         
         # یک دیکشنری برای نگهداری تمام داده‌های فرم
