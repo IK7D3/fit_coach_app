@@ -133,12 +133,12 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
             f"- وزن فعلی: {user.current_weight_kg} کیلوگرم\n"
             f"- وزن هدف: {user.target_weight_kg} کیلوگرم"
         )
-        exercises = db.query(models.Exercise).all()
-        exercise_list_str = "\n".join([f"- {ex.name} (برای گروه عضلانی: {ex.muscle_group})" for ex in exercises])
+        # exercises = db.query(models.Exercise).all()
+        # exercise_list_str = "\n".join([f"- {ex.name} (برای گروه عضلانی: {ex.muscle_group})" for ex in exercises])
         
         formatted_prompt = SYSTEM_PROMPT.format(
             user_data=user_data_str, 
-            available_exercises=exercise_list_str
+            # available_exercises=exercise_list_str
         )
 
     # ۴. ذخیره پیام کاربر در تاریخچه

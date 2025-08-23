@@ -191,7 +191,7 @@ def main():
             display_chat_interface()
     
 
-    st.write("DEBUG - session_state:", dict(st.session_state))
+    # st.write("DEBUG - session_state:", dict(st.session_state))
     
 if __name__ == "__main__":
     main()
