@@ -16,7 +16,7 @@ class SessionManager:
             self.target_weight_input = 80.0
             self.messages = []
             self.plan_received = False
-            self.form_step = 1
+            self.form_step = 2
 
     def get_initialized(self):
         return self.initialized
