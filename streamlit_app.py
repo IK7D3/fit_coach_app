@@ -1,7 +1,7 @@
 # streamlit_app.py
 import streamlit as st
 import requests
-
+from initialize_session import SessionManager
 # --- تنظیمات اولیه ---
 API_BASE_URL = "https://fitcoachapp-production.up.railway.app" # آدرس پایه API شما
 FORM_API_URL = f"{API_BASE_URL}/users/form-data"
@@ -40,6 +40,7 @@ def display_form_step_1():
     if st.button("مرحله بعد", use_container_width=True, type="primary"):
         if st.session_state.gender_input:
             st.session_state.form_step = 2
+            st.rerun()
         else:
             st.warning("لطفاً جنسیت خود را انتخاب کنید.")
 
@@ -53,7 +54,7 @@ def display_form_step_2():
     if st.button("مرحله بعد", use_container_width=True, type="primary"):
         if st.session_state.height_input >= 100 and st.session_state.current_weight_input >= 30:
             st.session_state.form_step = 3
-
+            st.rerun()
         else:
             st.warning("لطفاً قد و وزن خود را به درستی وارد کنید.")
 
@@ -151,31 +152,32 @@ def main():
     st.set_page_config(page_title="مربی هوشمند", page_icon="🤖")
     st.title("به دستیار هوشمند مربی خوش آمدید! 🤖")
 
-    if 'initialized' not in st.session_state:
-        query_params = st.query_params
-        user_id = query_params.get("user_id")
-        first_name = query_params.get("first_name")
-        st.session_state.telegram_user_id = int(user_id) if user_id else 99999
-        st.session_state.first_name = first_name or "کاربر تستی"
+    sessionManager = SessionManager()
+    # if 'initialized' not in st.session_state:
+    #     query_params = st.query_params
+    #     user_id = query_params.get("user_id")
+    #     first_name = query_params.get("first_name")
+    #     st.session_state.telegram_user_id = int(user_id) if user_id else 99999
+    #     st.session_state.first_name = first_name or "کاربر تستی"
         
-        # مقداردهی اولیه تمام کلیدها برای جلوگیری از خطا
-        st.session_state.setdefault('gender_input', None)
-        st.session_state.setdefault('height_input', 170)
-        st.session_state.setdefault('current_weight_input', 70.0)
-        st.session_state.setdefault('target_weight_input', 65.0)
-        st.session_state.setdefault('messages', [])
-        st.session_state.setdefault('plan_received', False)
-        st.session_state.setdefault('form_step', 1)
-        st.session_state.setdefault('initialized', True)
+    #     # مقداردهی اولیه تمام کلیدها برای جلوگیری از خطا
+    #     st.session_state.setdefault('gender_input', None)
+    #     st.session_state.setdefault('height_input', 170)
+    #     st.session_state.setdefault('current_weight_input', 70.0)
+    #     st.session_state.setdefault('target_weight_input', 65.0)
+    #     st.session_state.setdefault('messages', [])
+    #     st.session_state.setdefault('plan_received', False)
+    #     st.session_state.setdefault('form_step', 1)
+    #     st.session_state.setdefault('initialized', True)
     
     # نمایش صفحه مناسب بر اساس مرحله فعلی
-    if st.session_state.form_step == 1:
+    if sessionManager.get_form_step() == 1:
         display_form_step_1()
-    elif st.session_state.form_step == 2:
+    elif sessionManager.get_form_step() == 2:
         display_form_step_2()
-    elif st.session_state.form_step == 3:
+    elif sessionManager.get_form_step() == 3:
         display_form_step_3()
-    elif st.session_state.form_step == 4:
+    elif sessionManager.get_form_step() == 4:
         if not st.session_state.messages:
             # اولین پیام را فقط یک بار ارسال می‌کنیم
             send_message_to_backend("start")
@@ -185,6 +187,6 @@ def main():
         else:
             display_chat_interface()
     st.write("DEBUG - session_state:", dict(st.session_state))
-
+    
 if __name__ == "__main__":
     main()
