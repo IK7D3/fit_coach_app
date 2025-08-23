@@ -18,17 +18,15 @@ logger = logging.getLogger(__name__)
 
 # --- تعریف دستورات ربات ---
 
-async def register_user(user_id: int, first_name: str):
-    """در پشت صحنه، کاربر را در سیستم ما ثبت‌نام می‌کند."""
+async def get_user_status(user_id: int) -> dict:
+    """وضعیت کاربر (آیا فرم را پر کرده؟) را از بک‌اند می‌پرسد."""
     try:
-        payload = {"telegram_user_id": user_id, "first_name": first_name}
-        response = requests.post(f"{API_BASE_URL}/register", json=payload, timeout=30)
+        response = requests.get(f"{API_BASE_URL}/users/status/{user_id}", timeout=20)
         response.raise_for_status()
-        logger.info(f"User {user_id} registered successfully.")
-        return True
+        return response.json()
     except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to register user {user_id}. Error: {e}")
-        return False
+        logger.error(f"Failed to get status for user {user_id}. Error: {e}")
+        return {"form_completed": False, "plan_generated": False} # مقدار پیش‌فرض در صورت خطا
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -37,24 +35,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     logger.info(f"User {user.id} ({user.first_name}) started the bot.")
     
-    # قدم ۱: ثبت‌نام کاربر در بک‌اند
-    registration_successful = await register_user(user.id, user.first_name or "کاربر")
+    # --- بخش کلیدی جدید: بررسی وضعیت کاربر ---
+    status = await get_user_status(user.id)
+    
+    # بر اساس وضعیت، پارامترهای مختلفی به URL اضافه می‌کنیم
+    params = {
+        "user_id": user.id,
+        "first_name": urllib.parse.quote(user.first_name or "کاربر")
+    }
+    if status.get("form_completed"):
+        params["skip_form"] = "true"
+    if status.get("plan_generated"):
+        params["show_plan"] = "true"
 
-    if not registration_successful:
-        await update.message.reply_text("متاسفانه در حال حاضر مشکلی در سیستم وجود دارد. لطفاً کمی بعد دوباره تلاش کنید.")
-        return
-
-    # قدم ۲: ساخت دکمه و ارسال پیام
-    encoded_first_name = urllib.parse.quote(user.first_name or "کاربر")
-    web_app_url_with_params = f"{BASE_WEB_APP_URL}?user_id={user.id}&first_name={encoded_first_name}"
+    web_app_url_with_params = f"{BASE_WEB_APP_URL}?{urllib.parse.urlencode(params)}"
 
     keyboard = [[InlineKeyboardButton("🚀 باز کردن دستیار هوشمند", web_app=WebAppInfo(url=web_app_url_with_params))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    welcome_message = (
-        f"سلام {user.first_name} عزیز!\n\n"
-        "ثبت‌نام شما با موفقیت انجام شد. برای شروع مصاحبه و دریافت برنامه، روی دکمه زیر کلیک کن."
-    )
+    welcome_message = f"سلام {user.first_name} عزیز! برای ادامه روی دکمه زیر کلیک کن."
     await update.message.reply_text(welcome_message, reply_markup=reply_markup)
 
 # --- راه‌اندازی و اجرای ربات ---

@@ -41,6 +41,10 @@ class ChatHistoryResponse(BaseModel):
     sender: str
     message_text: str
 
+class UserStatusResponse(BaseModel):
+    form_completed: bool
+    plan_generated: bool
+
 # --- Dependency ---
 def get_db():
     db = SessionLocal()
@@ -96,19 +100,35 @@ def update_user_form_data(form_data: UserDataForm, db: Session = Depends(get_db)
     db.commit()
     return {"status": "success", "message": "User data updated successfully."}
 
+@app.get("/users/status/{telegram_user_id}", response_model=UserStatusResponse)
+def get_user_status(telegram_user_id: int, db: Session = Depends(get_db)):
+    """بررسی می‌کند آیا کاربر فرم را پر کرده و آیا برنامه‌ای برایش ساخته شده است."""
+    user = db.query(models.User).filter(models.User.telegram_user_id == telegram_user_id).first()
+    if not user:
+        return UserStatusResponse(form_completed=False, plan_generated=False)
+    
+    form_completed = all([user.gender, user.height_cm, user.current_weight_kg, user.target_weight_kg])
+    plan_exists = db.query(models.GeneratedPlan).filter(models.GeneratedPlan.user_id == user.id).first() is not None
+    
+    return UserStatusResponse(form_completed=form_completed, plan_generated=plan_exists)
+
 @app.post("/chat", response_model=ChatResponse)
 def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
-    """
-    این Endpoint اصلی برای مدیریت گفتگوی کاربر است (نسخه هماهنگ شده با LCEL).
-    """
-    # ۱. پیدا کردن کاربر
     user = db.query(models.User).filter(models.User.telegram_user_id == request.telegram_user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found. Please register first.")
+        raise HTTPException(status_code=404, detail="User not found.")
 
-    # ۲. پیدا کردن یا ساختن یک جلسه چت برای کاربر
     if user.telegram_user_id not in chat_sessions:
-        chat_sessions[user.telegram_user_id] = FitnessCoachAssistant()
+        assistant = FitnessCoachAssistant()
+        # --- بخش کلیدی جدید: تزریق حافظه (Memory Rehydration) ---
+        # تاریخچه قبلی را از دیتابیس می‌خوانیم و به حافظه AI تزریق می‌کنیم
+        past_history = db.query(models.ChatHistory).filter(models.ChatHistory.user_id == user.id).order_by(models.ChatHistory.timestamp).all()
+        for msg in past_history:
+            if msg.sender == 'user':
+                assistant.memory.chat_memory.add_user_message(msg.message_text)
+            else:
+                assistant.memory.chat_memory.add_ai_message(msg.message_text)
+        chat_sessions[user.telegram_user_id] = assistant
     
     assistant = chat_sessions[user.telegram_user_id]
 

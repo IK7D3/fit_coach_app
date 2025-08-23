@@ -6,6 +6,7 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.memory import ConversationBufferMemory
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
+from langchain.memory import ConversationSummaryBufferMemory
 
 # ---- تنظیمات اولیه ----
 # کلید API خود را اینجا قرار دهید. بهتر است از متغیرهای محیطی استفاده کنید.
@@ -71,6 +72,12 @@ class FitnessCoachAssistant:
         self.llm = ChatCohere(model="command-r", temperature=0.7)
         self.memory = ConversationBufferMemory(return_messages=True, memory_key="history")
         # ما یک قالب اولیه برای پرامپت می‌سازیم که بعداً فرمت خواهد شد
+        self.memory = ConversationSummaryBufferMemory(
+            llm=self.llm, 
+            max_token_limit=1000, 
+            return_messages=True, 
+            memory_key="history"
+        )
         self.prompt_template = ChatPromptTemplate.from_messages([
             ("system", "{system_prompt}"), # اینجا یک متغیر جدید اضافه کردیم
             MessagesPlaceholder(variable_name="history"),
