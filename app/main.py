@@ -99,23 +99,22 @@ def update_user_form_data(form_data: UserDataForm, db: Session = Depends(get_db)
 @app.post("/chat", response_model=ChatResponse)
 def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
     """
-    این Endpoint اصلی برای مدیریت گفتگوی کاربر است.
+    این Endpoint اصلی برای مدیریت گفتگوی کاربر است (نسخه هماهنگ شده با LCEL).
     """
-    # ۱. پیدا کردن کاربر (دیگر کاربر جدید نمی‌سازیم، چون باید از قبل ثبت‌نام کرده باشد)
+    # ۱. پیدا کردن کاربر
     user = db.query(models.User).filter(models.User.telegram_user_id == request.telegram_user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found. Please register first.")
 
-    # ۲. پیدا کردن یا ساختن یک جلسه چت (Chat Session) برای کاربر
+    # ۲. پیدا کردن یا ساختن یک جلسه چت برای کاربر
     if user.telegram_user_id not in chat_sessions:
         chat_sessions[user.telegram_user_id] = FitnessCoachAssistant()
     
     assistant = chat_sessions[user.telegram_user_id]
 
-    # --- بخش کلیدی جدید: تزریق اطلاعات به پرامپت ---
-    # اگر این اولین پیام گفتگوست، پرامپت را با اطلاعات کاربر و حرکات فرمت می‌کنیم
+    # ۳. آماده‌سازی پرامپت کامل (فقط برای اولین پیام گفتگو)
+    formatted_prompt = ""
     if not assistant.memory.chat_memory.messages:
-        # الف) استخراج اطلاعات کاربر از دیتابیس
         user_data_str = (
             f"- نام: {user.first_name}\n"
             f"- جنسیت: {user.gender}\n"
@@ -123,53 +122,42 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
             f"- وزن فعلی: {user.current_weight_kg} کیلوگرم\n"
             f"- وزن هدف: {user.target_weight_kg} کیلوگرم"
         )
-        
-        # ب) استخراج لیست حرکات از دیتابیس
         exercises = db.query(models.Exercise).all()
         exercise_list_str = "\n".join([f"- {ex.name} (برای گروه عضلانی: {ex.muscle_group})" for ex in exercises])
         
-        # ج) فرمت کردن پرامپت نهایی با اطلاعات جدید
         formatted_prompt = SYSTEM_PROMPT.format(
             user_data=user_data_str, 
             available_exercises=exercise_list_str
         )
-        
-        # د) آپدیت پرامپت سیستمی در زنجیره گفتگو برای این کاربر خاص
-        assistant.conversation.prompt.messages[0].prompt.template = formatted_prompt
 
-    # ۳. ذخیره پیام کاربر در تاریخچه
+    # ۴. ذخیره پیام کاربر در تاریخچه
     user_chat = models.ChatHistory(user_id=user.id, sender="user", message_text=request.message)
     db.add(user_chat)
     db.commit()
 
-    # ۴. گرفتن پاسخ از هوش مصنوعی
-    ai_message_text = assistant.get_response(request.message)
+    # ۵. گرفتن پاسخ از هوش مصنوعی با متد جدید
+    ai_message_text = assistant.get_response(request.message, formatted_prompt)
 
-    # ۵. ذخیره پیام AI در تاریخچه
+    # ۶. ذخیره پیام AI در تاریخچه
     ai_chat = models.ChatHistory(user_id=user.id, sender="ai", message_text=ai_message_text)
     db.add(ai_chat)
     db.commit()
 
-    # ۶. بررسی اینکه آیا مکالمه تمام شده و باید برنامه ساخته شود
+    # ۷. بررسی و ذخیره برنامه نهایی
     plan_data = assistant.parse_final_response(ai_message_text)
     if plan_data and "plan" in plan_data:
-        # --- بخش کلیدی جدید: ذخیره برنامه در دیتابیس ---
-        # ابتدا چک می‌کنیم آیا کاربر از قبل برنامه دارد یا نه و آن را حذف می‌کنیم
         existing_plan = db.query(models.GeneratedPlan).filter(models.GeneratedPlan.user_id == user.id).first()
         if existing_plan:
             db.delete(existing_plan)
             db.commit()
 
-        # ساخت برنامه جدید
         new_plan = models.GeneratedPlan(user_id=user.id, plan_type="free_generated")
         db.add(new_plan)
         db.commit()
         db.refresh(new_plan)
 
-        # ذخیره جزئیات برنامه (حرکات)
         for day_data in plan_data["plan"]:
             for exercise_data in day_data["exercises"]:
-                # پیدا کردن آبجکت حرکت در دیتابیس برای گرفتن ID آن
                 exercise_obj = db.query(models.Exercise).filter(models.Exercise.name == exercise_data["name"]).first()
                 if exercise_obj:
                     plan_entry = models.PlanEntry(
@@ -183,7 +171,6 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
                     db.add(plan_entry)
         db.commit()
         
-        # پاک کردن جلسه چت بعد از اتمام کار
         del chat_sessions[user.telegram_user_id]
         
         return ChatResponse(
@@ -193,6 +180,7 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
         )
 
     return ChatResponse(ai_response=ai_message_text)
+
 
 
 
