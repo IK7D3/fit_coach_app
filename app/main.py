@@ -103,29 +103,67 @@ def get_user_status(telegram_user_id: int, db: Session = Depends(get_db)):
     
     return UserStatusResponse(form_completed=form_completed, plan_generated=plan_exists)
 
+DIALOGUE_QUESTIONS = [
+    # step 1
+    "اول از همه، درصد چربی و درصد تقریبی عضلات بدنت رو می‌دونی؟ اگر نمی‌دونی، فقط بهم بگو بدنت به کدوم توصیف نزدیک‌تره: الف) عضلانی و خشک، ب) عضلانی با کمی چربی، ج) بیشتر اضافه وزن دارم.",
+    # step 2
+    "بسیار خب. حالا بهم بگو آیا ناهنجاری اسکلتی مثل دیسک کمر، گودی کمر شدید، قوز پشتی یا درد مزمن در مفاصلت داری؟",
+    # step 3
+    "ممنون. وقتی به بدنت در آینه نگاه می‌کنی، اولین تغییر مثبتی که دوست داری ببینی چی هست؟ (مثلا شکم صاف‌تر، بازوهای حجیم‌تر، یا فرم بهتر پاها)",
+    # step 4
+    "درک می‌کنم. رسیدن به این هدف، چه فرصت‌های جدیدی رو در زندگی شخصی یا شغلی برات باز می‌کنه؟",
+    # step 5
+    "عالیه. حالا بریم سراغ برنامه‌ریزی. در هفته چند روز می‌تونی با تمرکز کامل برای تمرین وقت بذاری؟",
+    # step 6
+    "و سوال آخر: آیا حرکت یا تمرین خاصی وجود داره که از انجام دادنش می‌ترسی یا حس می‌کنی بهت آسیب می‌زنه؟ (مثلاً بعضی‌ها با حرکت اسکات یا ددلیفت راحت نیستند)"
+]
+
 @app.post("/chat", response_model=ChatResponse)
 def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.telegram_user_id == request.telegram_user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    if user.telegram_user_id not in chat_sessions:
-        assistant = FitnessCoachAssistant()
-        # --- بخش کلیدی جدید: تزریق حافظه (Memory Rehydration) ---
-        # تاریخچه قبلی را از دیتابیس می‌خوانیم و به حافظه AI تزریق می‌کنیم
-        past_history = db.query(models.ChatHistory).filter(models.ChatHistory.user_id == user.id).order_by(models.ChatHistory.timestamp).all()
-        for msg in past_history:
-            if msg.sender == 'user':
-                assistant.memory.chat_memory.add_user_message(msg.message_text)
-            else:
-                assistant.memory.chat_memory.add_ai_message(msg.message_text)
-        chat_sessions[user.telegram_user_id] = assistant
-    
-    assistant = chat_sessions[user.telegram_user_id]
+    # ذخیره پیام کاربر در تاریخچه
+    user_chat = models.ChatHistory(user_id=user.id, sender="user", message_text=request.message)
+    db.add(user_chat)
+    db.commit()
 
-    # ۳. آماده‌سازی پرامپت کامل (فقط برای اولین پیام گفتگو)
-    formatted_prompt = ""
-    if not assistant.memory.chat_memory.messages:
+    # --- منطق جدید کنترل گفتگو ---
+    current_step = user.dialogue_step
+
+    # اگر گفتگو تمام شده، یک پیام استاندارد برگردان
+    if current_step >= len(DIALOGUE_QUESTIONS):
+        ai_response = "ما تمام سوالات لازم را بررسی کردیم. در حال آماده‌سازی برنامه شما هستیم!"
+        # اینجا بعداً منطق ساخت JSON نهایی را اضافه خواهید کرد
+    else:
+        # وظیفه فعلی را مشخص کن
+        task_prompt = f"وظیفه تو پرسیدن این سوال است: '{DIALOGUE_QUESTIONS[current_step]}'. این سوال را به شکلی طبیعی و دوستانه از کاربر بپرس."
+        
+        if current_step == 0 and request.message == "start":
+             # پیام خوشامدگویی ویژه برای شروع
+            user_info = (
+                f"- جنسیت: {user.gender}\n"
+                f"- قد: {user.height_cm} سانتی‌متر\n"
+                f"- وزن فعلی: {user.current_weight_kg} کیلوگرم\n"
+                f"- وزن هدف: {user.target_weight_kg} کیلوگرم"
+            )
+            task_prompt = (
+                f"این اولین پیام به کاربر است. با نامش به او سلام کن و مشخصاتش را به این شکل نمایش بده:\n{user_info}\n"
+                f"سپس، این سوال را به شکلی طبیعی و دوستانه از او بپرس: '{DIALOGUE_QUESTIONS[current_step]}'"
+            )
+
+        # مقداردهی دستیار هوش مصنوعی
+        # (این بخش از کد chatbot.py شما می‌آید)
+        assistant = chat_sessions.get(user.telegram_user_id)
+        if not assistant:
+            assistant = FitnessCoachAssistant() # فرض بر اینکه chatbot.py این کلاس را دارد
+            chat_sessions[user.telegram_user_id] = assistant
+
+        # تزریق حافظه (مهم برای حفظ زمینه)
+        past_history = db.query(models.ChatHistory).filter(models.ChatHistory.user_id == user.id).order_by(models.ChatHistory.timestamp.desc()).limit(10).all()
+        history_str = "\n".join([f"{msg.sender}: {msg.message_text}" for msg in reversed(past_history)])
+
         user_data_str = (
             f"- نام: {user.first_name}\n"
             f"- جنسیت: {user.gender}\n"
@@ -133,64 +171,29 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
             f"- وزن فعلی: {user.current_weight_kg} کیلوگرم\n"
             f"- وزن هدف: {user.target_weight_kg} کیلوگرم"
         )
-        # exercises = db.query(models.Exercise).all()
-        # exercise_list_str = "\n".join([f"- {ex.name} (برای گروه عضلانی: {ex.muscle_group})" for ex in exercises])
-        
-        formatted_prompt = SYSTEM_PROMPT.format(
-            user_data=user_data_str, 
-            # available_exercises=exercise_list_str
+
+        # ساخت پرامپت نهایی و ساده
+        final_prompt = SYSTEM_PROMPT.format(
+            user_data=user_data_str,
+            history=history_str,
+            task=task_prompt
         )
 
-    # ۴. ذخیره پیام کاربر در تاریخچه
-    user_chat = models.ChatHistory(user_id=user.id, sender="user", message_text=request.message)
-    db.add(user_chat)
-    db.commit()
+        # دریافت پاسخ از هوش مصنوعی (اینجا از get_response ساده استفاده می‌کنیم)
+        # توجه: شاید لازم باشد متد get_response در chatbot.py را ساده‌سازی کنید
+        # تا فقط یک پرامپت کامل را دریافت کرده و اجرا کند.
+        ai_response = assistant.get_simple_response(final_prompt) # مثال ساده‌شده
 
-    # ۵. گرفتن پاسخ از هوش مصنوعی با متد جدید
-    ai_message_text = assistant.get_response(request.message, formatted_prompt)
+        # برو به مرحله بعد
+        user.dialogue_step += 1
+        db.commit()
 
-    # ۶. ذخیره پیام AI در تاریخچه
-    ai_chat = models.ChatHistory(user_id=user.id, sender="ai", message_text=ai_message_text)
+    # ذخیره پاسخ AI در تاریخچه
+    ai_chat = models.ChatHistory(user_id=user.id, sender="ai", message_text=ai_response)
     db.add(ai_chat)
     db.commit()
 
-    # ۷. بررسی و ذخیره برنامه نهایی
-    plan_data = assistant.parse_final_response(ai_message_text)
-    if plan_data and "plan" in plan_data:
-        existing_plan = db.query(models.GeneratedPlan).filter(models.GeneratedPlan.user_id == user.id).first()
-        if existing_plan:
-            db.delete(existing_plan)
-            db.commit()
-
-        new_plan = models.GeneratedPlan(user_id=user.id, plan_type="free_generated")
-        db.add(new_plan)
-        db.commit()
-        db.refresh(new_plan)
-
-        for day_data in plan_data["plan"]:
-            for exercise_data in day_data["exercises"]:
-                exercise_obj = db.query(models.Exercise).filter(models.Exercise.name == exercise_data["name"]).first()
-                if exercise_obj:
-                    plan_entry = models.PlanEntry(
-                        plan_id=new_plan.id,
-                        exercise_id=exercise_obj.id,
-                        day_number=day_data["day"],
-                        sets=exercise_data["sets"],
-                        reps=exercise_data["reps"],
-                        display_order=day_data["exercises"].index(exercise_data)
-                    )
-                    db.add(plan_entry)
-        db.commit()
-        
-        del chat_sessions[user.telegram_user_id]
-        
-        return ChatResponse(
-            ai_response="برنامه شما با موفقیت ساخته شد!",
-            is_final=True,
-            plan_data=plan_data
-        )
-
-    return ChatResponse(ai_response=ai_message_text)
+    return ChatResponse(ai_response=ai_response)
 
 
 

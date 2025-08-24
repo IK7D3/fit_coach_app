@@ -34,11 +34,14 @@ class User(Base):
     height_cm = Column(Float, nullable=True)
     current_weight_kg = Column(Float, nullable=True)
     target_weight_kg = Column(Float, nullable=True)
-
+    dialogue_step = Column(Integer, default=0)
     # تعریف روابط (Relationships)
     chats = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
     plan = relationship("GeneratedPlan", uselist=False, back_populates="user", cascade="all, delete-orphan")
+
+    
 class ChatHistory(Base):
+
     """
     مدل تاریخچه چت. تمام مکالمات کاربر با AI اینجا ذخیره می‌شود.
     """
