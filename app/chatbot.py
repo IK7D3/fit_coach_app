@@ -6,10 +6,12 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain.memory import ConversationSummaryBufferMemory
+from langchain_openai import ChatOpenAI
 
 # ---- تنظیمات اولیه ----
 # کلید API خود را اینجا قرار دهید. بهتر است از متغیرهای محیطی استفاده کنید.
-os.environ["COHERE_API_KEY"] = "kA8LXTMFKv4hawhHE6FrDdbzOx1UbdTGu7dYuf7c"
+
+
 
 # پرامپت سیستمی که قبلاً طراحی کردیم
 SYSTEM_PROMPT = """
@@ -25,20 +27,15 @@ class FitnessCoachAssistant:
     فقط یک وظیفه دارد: یک پرامپت کامل را دریافت کرده و پاسخ مدل را برگرداند.
     """
     def __init__(self):
-        self.llm = ChatCohere(model="command-r", temperature=0.7)
-        # ما دیگر به حافظه یا chain در این کلاس نیازی نداریم، چون منطق در main.py است
+        # ما مدل رو به gpt-4o تغییر می‌دیم که در دنبال کردن دستورالعمل‌ها بسیار قدرتمنده
+        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
 
     def get_simple_response(self, final_prompt: str) -> str:
-        """
-        یک پرامپت کامل و فرمت‌شده را دریافت کرده و پاسخ مدل را برمی‌گرداند.
-        """
+        # این متد بدون تغییر باقی می‌ماند
         try:
-            # ما مستقیماً پرامپت نهایی را به مدل می‌دهیم
             response = self.llm.invoke(final_prompt)
-            # اگر از مدل‌های جدیدتر استفاده می‌کنید، ممکن است نیاز به .content داشته باشد
             return response.content if hasattr(response, 'content') else str(response)
         except Exception as e:
-            # مدیریت خطا در صورت بروز مشکل در ارتباط با API
             print(f"Error calling LLM: {e}")
             return "متاسفانه در حال حاضر مشکلی در ارتباط با سرور پیش آمده. لطفاً کمی بعد دوباره تلاش کنید."
 
