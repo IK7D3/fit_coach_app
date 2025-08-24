@@ -7,7 +7,7 @@ from sqlalchemy import text
 # وارد کردن کلاس‌ها و توابع از فایل‌های دیگر پروژه
 from . import models
 from .database import SessionLocal, engine
-from .chatbot import FitnessCoachAssistant, SYSTEM_PROMPT
+from .chatbot import FitnessCoachAssistant
 
 models.Base.metadata.create_all(bind=engine)
 
