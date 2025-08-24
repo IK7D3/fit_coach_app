@@ -133,74 +133,59 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
     ai_response = ""
     should_increment_step = False
 
-    if current_step >= len(DIALOGUE_QUESTIONS):
+    # --- منطق جدید: راه فرار برای جلوگیری از حلقه بی‌نهایت ---
+    if user.repeat_count >= 2:
+        # اگر یک سوال ۲ بار تکرار شده باشد، به زور به مرحله بعد می‌رویم
+        ai_response = "ظاهرا از پاسخ به این سوال ممانعت داری، اوکی بگذریم بریم سوال بعد..."
+        
+        # آماده‌سازی برای پرسیدن سوال بعدی در پیام بعدی کاربر
+        should_increment_step = True
+        user.repeat_count = 0 # ریست کردن شمارنده
+    
+    elif current_step >= len(DIALOGUE_QUESTIONS):
         ai_response = "ما تمام سوالات لازم را بررسی کردیم. در حال آماده‌سازی برنامه شما هستیم!"
-        # اینجا بعداً منطق ساخت JSON نهایی را اضافه خواهید کرد
+        # (منطق ساخت JSON نهایی)
     else:
-        # --- منطق نگهبان هوش مصنوعی ---
+        # --- منطق نگهبان هوش مصنوعی (که از قبل داشتیم) ---
+        task_prompt = "" # مقداردهی اولیه
         if current_step == 0:
-            # برای پیام اول، همیشه به مرحله بعد می‌رویم
-            user_info = (
-                f"- جنسیت: {user.gender}\n"
-                f"- قد: {user.height_cm} سانتی‌متر\n"
-                f"- وزن فعلی: {user.current_weight_kg} کیلوگرم\n"
-                f"- وزن هدف: {user.target_weight_kg} کیلوگرم"
-            )
-            task_prompt = (
-                f"این اولین پیام به کاربر است. نام او '{user.first_name}' است. با نامش به او سلام کن و مشخصاتش را به این شکل نمایش بده:\n{user_info}\n"
-                f"سپس، این سوال را به شکلی طبیعی و دوستانه از او بپرس: '{DIALOGUE_QUESTIONS[current_step]}'"
-            )
+            user_info = (f"- جنسیت: {user.gender}\n" f"- قد: {user.height_cm} سانتی‌متر\n" f"- وزن فعلی: {user.current_weight_kg} کیلوگرم\n" f"- وزن هدف: {user.target_weight_kg} کیلوگرم")
+            task_prompt = (f"این اولین پیام به کاربر است. نام او '{user.first_name}' است. با نامش به او سلام کن و مشخصاتش را به این شکل نمایش بده:\n{user_info}\n" f"سپس، این سوال را به شکلی طبیعی و دوستانه از او بپرس: '{DIALOGUE_QUESTIONS[current_step]}'")
             should_increment_step = True
         else:
-            # برای سوالات بعدی، پاسخ کاربر را ارزیابی می‌کنیم
             last_user_answer = request.message
             previous_question = DIALOGUE_QUESTIONS[current_step - 1]
             next_question = DIALOGUE_QUESTIONS[current_step]
-            task_prompt = (
-                f"سوال قبلی که از کاربر پرسیدی این بود: '{previous_question}'. پاسخ اخیر کاربر این است: '{last_user_answer}'.\n"
-                f"وظیفه تو: ابتدا پاسخ کاربر را ارزیابی کن.\n"
-                f"اگر پاسخ کاربر، جوابی مرتبط به سوال قبلی بود، پاسخت را با تگ [PROCEED] شروع کن، یک جمله کوتاه مثبت بگو و سپس سوال بعدی یعنی این سوال را بپرس: '{next_question}'.\n"
-                f"اگر پاسخ کاربر نامرتبط یا بی‌معنی بود، پاسخت را با تگ [REPEAT] شروع کن، با احترام به او بگو روی موضوع متمرکز بماند و همان سوال قبلی یعنی '{previous_question}' را دوباره از او بپرس."
-            )
+            task_prompt = (f"سوال قبلی این بود: '{previous_question}'. پاسخ اخیر کاربر این است: '{last_user_answer}'.\n" f"وظیفه تو: ابتدا بررسی کن آیا پاسخ کاربر به طور منطقی به سوال قبلی ربط دارد یا نه. تو نباید انگیزه کاربر را قضاوت کنی. اگر پاسخ به یکی از جنبه‌های سوال (شخصی، شغلی و غیره) می‌پردازد، آن را 'مرتبط' در نظر بگیر، حتی اگر به نظرت سطحی یا نامناسب باشد.\n" f"اگر پاسخ مرتبط بود، پاسخت را با تگ [PROCEED] شروع کن، یک جمله کوتاه مثبت بگو و سپس سوال بعدی یعنی '{next_question}' را بپرس.\n" f"اگر پاسخ کاملاً نامرتبط بود (مثلاً در مورد آب و هوا صحبت کرد)، پاسخت را با تگ [REPEAT] شروع کن و سوال قبلی یعنی '{previous_question}' را دوباره بپرس.")
 
         assistant = chat_sessions.get(user.telegram_user_id, FitnessCoachAssistant())
         chat_sessions[user.telegram_user_id] = assistant
 
         past_history = db.query(models.ChatHistory).filter(models.ChatHistory.user_id == user.id).order_by(models.ChatHistory.timestamp.desc()).limit(10).all()
         history_str = "\n".join([f"{msg.sender}: {msg.message_text}" for msg in reversed(past_history)])
+        user_data_str = (f"- نام: {user.first_name}\n" f"- جنسیت: {user.gender}\n" f"- قد: {user.height_cm} سانتی‌متر\n" f"- وزن فعلی: {user.current_weight_kg} کیلوگرم\n" f"- وزن هدف: {user.target_weight_kg} کیلوگرم")
 
-        user_data_str = (
-            f"- نام: {user.first_name}\n"
-            f"- جنسیت: {user.gender}\n"
-            f"- قد: {user.height_cm} سانتی‌متر\n"
-            f"- وزن فعلی: {user.current_weight_kg} کیلوگرم\n"
-            f"- وزن هدف: {user.target_weight_kg} کیلوگرم"
-        )
-
-        final_prompt = SYSTEM_PROMPT.format(
-            user_data=user_data_str,
-            history=history_str,
-            task=task_prompt
-        )
-
+        final_prompt = SYSTEM_PROMPT.format(user_data=user_data_str, history=history_str, task=task_prompt)
         raw_ai_response = assistant.get_simple_response(final_prompt)
 
-        # --- پردازش تگ‌ها ---
         if raw_ai_response.strip().startswith("[PROCEED]"):
             should_increment_step = True
+            user.repeat_count = 0  # ریست کردن شمارنده چون پاسخ درست بود
             ai_response = raw_ai_response.replace("[PROCEED]", "").strip()
         elif raw_ai_response.strip().startswith("[REPEAT]"):
             should_increment_step = False
+            user.repeat_count += 1  # افزایش شمارنده چون پاسخ اشتباه بود
             ai_response = raw_ai_response.replace("[REPEAT]", "").strip()
         else:
-            # اگر مدل تگ را فراموش کرد، به عنوان حالت پیش‌فرض به مرحله بعد می‌رویم
             should_increment_step = True
+            user.repeat_count = 0 # ریست کردن شمارنده به عنوان حالت پیش‌فرض
             ai_response = raw_ai_response
 
-    # --- آپدیت مرحله گفتگو ---
+    # --- آپدیت دیتابیس ---
     if should_increment_step:
         user.dialogue_step += 1
-        db.commit()
+    
+    db.commit() # ذخیره تمام تغییرات (dialogue_step و repeat_count)
 
     # ذخیره پاسخ AI در تاریخچه
     ai_chat = models.ChatHistory(user_id=user.id, sender="ai", message_text=ai_response)

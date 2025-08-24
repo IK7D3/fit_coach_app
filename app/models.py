@@ -35,6 +35,7 @@ class User(Base):
     current_weight_kg = Column(Float, nullable=True)
     target_weight_kg = Column(Float, nullable=True)
     dialogue_step = Column(Integer, default=0)
+    repeat_count = Column(Integer, default=0)
     # تعریف روابط (Relationships)
     chats = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
     plan = relationship("GeneratedPlan", uselist=False, back_populates="user", cascade="all, delete-orphan")
