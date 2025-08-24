@@ -1,197 +1,149 @@
 # streamlit_app.py
 import streamlit as st
 import requests
+import time
+import json
 
-# --- تنظیمات اولیه ---
-API_BASE_URL = "https://fitcoachapp-production.up.railway.app" # آدرس پایه API شما
-FORM_API_URL = f"{API_BASE_URL}/users/form-data"
-CHAT_API_URL = f"{API_BASE_URL}/chat"
-HISTORY_API_URL = f"{API_BASE_URL}/chat/{{user_id}}/history"
+API_BASE_URL = "https://fitcoachapp-production.up.railway.app"
 
-# --- توابع اصلی ---
-
-        
 def initialize_session_state():
-    """تمام متغیرهای لازم در حافظه را مقداردهی اولیه می‌کند."""
     if 'initialized' not in st.session_state:
         query_params = st.query_params
-        user_id = query_params.get("user_id")
-        first_name = query_params.get("first_name")
-        
-        if not user_id:
-            st.error("دسترسی نامعتبر است. لطفاً برنامه را از طریق ربات تلگرام باز کنید.")
-            st.stop()
-
-        st.session_state.telegram_user_id = int(user_id)
-        st.session_state.first_name = first_name or "کاربر تستی"
+        st.session_state.telegram_user_id = int(query_params.get("user_id", 0))
+        st.session_state.first_name = query_params.get("first_name", "کاربر")
         
         st.session_state.form_data = {
-            "gender": None,
-            "height": 170,
-            "current_weight": 70.0,
-            "target_weight": 65.0
+            "gender": "مرد", "height_cm": 175.0, "current_weight_kg": 70.0, "target_weight_kg": 65.0,
+            "age": 25, "workout_location": "باشگاه", "body_description": "عضلانی با کمی چربی",
+            "physical_issues": "هیچکدام", "mirror_feeling": "", "goals_motivation": "",
+            "workout_days_per_week": 3, "feared_exercises": "هیچکدام"
         }
-        
-        st.session_state.messages = []
-        st.session_state.plan_received = False
-        st.session_state.form_step = 1
+        st.session_state.feedback = {}
+        st.session_state.page = "form"
         st.session_state.initialized = True
 
-def submit_form_and_start_chat():
-    """اطلاعات فرم را به بک‌اند ارسال می‌کند."""
-    with st.spinner("در حال ذخیره اطلاعات..."):
-        payload = {
-            "telegram_user_id": st.session_state.telegram_user_id,
-            "gender": st.session_state.form_data["gender"],
-            "height_cm": st.session_state.form_data["height"],
-            "current_weight_kg": st.session_state.form_data["current_weight"],
-            "target_weight_kg": st.session_state.form_data["target_weight"]
-        }
+def get_ai_feedback(question, field_name):
+    answer = st.session_state.form_data.get(field_name)
+    if answer:
         try:
-            response = requests.post(FORM_API_URL, json=payload)
-            response.raise_for_status()
-            st.session_state.form_step = 4
-            st.rerun()
-        except requests.exceptions.RequestException as e:
-            st.error(f"خطا در ذخیره اطلاعات: {e}")
+            response = requests.post(f"{API_BASE_URL}/get-ai-feedback", json={"question": question, "answer": str(answer)})
+            if response.status_code == 200:
+                st.session_state.feedback[field_name] = response.json().get("feedback_text")
+        except requests.RequestException:
+            pass
 
-def display_form_step_1():
-    st.header("مرحله ۱ از ۳: جنسیت")
-    gender = st.selectbox("جنسیت خود را انتخاب کنید:", ("مرد", "زن"), index=None, placeholder="انتخاب کنید...")
-    if st.button("مرحله بعد", use_container_width=True, type="primary"):
-        if gender:
-            st.session_state.form_data['gender'] = gender
-            st.session_state.form_step = 2
-            st.rerun()
+def display_feedback(field_name):
+    if feedback_text := st.session_state.feedback.get(field_name):
+        st.info(f"🤖 **مربی‌همراه:** {feedback_text}")
+
+def display_smart_form():
+    st.header(f"سلام {st.session_state.first_name} عزیز! لطفاً فرم زیر را کامل کن.")
+    st.markdown("---")
+
+    with st.container(border=True):
+        st.subheader("۱. اطلاعات پایه")
+        col1, col2 = st.columns(2)
+        # --- فیلدهای جدید اضافه شده ---
+        st.session_state.form_data['gender'] = col1.radio("جنسیت", ["مرد", "زن"], horizontal=True, key="gender")
+        st.session_state.form_data['age'] = col2.number_input("سن", 15, 80, st.session_state.form_data['age'], key="age")
+        
+        col3, col4, col5 = st.columns(3)
+        st.session_state.form_data['height_cm'] = col3.number_input("قد (سانتی‌متر)", 140.0, 220.0, st.session_state.form_data['height_cm'], key="height")
+        st.session_state.form_data['current_weight_kg'] = col4.number_input("وزن فعلی (کیلوگرم)", 40.0, 200.0, st.session_state.form_data['current_weight_kg'], key="c_weight")
+        st.session_state.form_data['target_weight_kg'] = col5.number_input("وزن هدف (کیلوگرم)", 40.0, 200.0, st.session_state.form_data['target_weight_kg'], key="t_weight")
+        
+        st.session_state.form_data['workout_location'] = st.radio("کجا تمرین می‌کنی؟", ["باشگاه", "خونه"], horizontal=True, key="location", on_change=get_ai_feedback, args=("محل تمرین", 'workout_location'))
+        display_feedback('workout_location')
+
+    # ... (بقیه بخش‌های فرم بدون تغییر زیاد)
+    with st.container(border=True):
+        st.subheader("۲. شرایط فعلی")
+        body_options = ["عضلانی و خشک", "عضلانی با کمی چربی", "بیشتر اضافه وزن دارم", "سایر"]
+        body_choice = st.radio("بدنت به کدوم توصیف نزدیک‌تره؟", body_options, index=1, horizontal=True)
+        if body_choice == "سایر":
+            st.session_state.form_data['body_description'] = st.text_input("توصیف خود را بنویسید:", key="body_desc_other")
         else:
-            st.warning("لطفاً جنسیت خود را انتخاب کنید.")
-
-def display_form_step_2():
-    st.header("مرحله ۲ از ۳: مشخصات فیزیکی")
-    col1, col2 = st.columns(2)
-    height = col1.number_input("قد شما (سانتی‌متر)", min_value=100, max_value=250, value=st.session_state.form_data['height'])
-    current_weight = col2.number_input("وزن فعلی شما (کیلوگرم)", min_value=30.0, max_value=200.0, value=st.session_state.form_data['current_weight'], format="%.1f")
-    
-    if st.button("مرحله بعد", use_container_width=True, type="primary"):
-        st.session_state.form_data['height'] = height
-        st.session_state.form_data['current_weight'] = current_weight
-        st.session_state.form_step = 3
-        st.rerun()
-
-def display_form_step_3():
-    st.header("مرحله ۳ از ۳: هدف شما")
-    target_weight = st.number_input("وزن هدف شما (کیلوگرم)", min_value=30.0, max_value=200.0, value=st.session_state.form_data['target_weight'], format="%.1f")
-    if st.button("پایان و شروع گفتگو", use_container_width=True, type="primary"):
-        st.session_state.form_data['target_weight'] = target_weight
-        if st.session_state.form_data['target_weight'] >= 30:
-            submit_form_and_start_chat()
+            st.session_state.form_data['body_description'] = body_choice
+        
+        issues_options = ["هیچکدام", "دیسک کمر", "زانو درد", "گودی کمر", "قوز", "سایر"]
+        issues_choice = st.multiselect("آیا ناهنجاری فیزیکی خاصی داری؟", issues_options, default="هیچکدام")
+        if "سایر" in issues_choice:
+            st.session_state.form_data['physical_issues'] = st.text_area("لطفاً مشکلات خود را توضیح دهید:", key="issues_other")
         else:
-            st.warning("لطفاً وزن هدف خود را به درستی وارد کنید.")
+            st.session_state.form_data['physical_issues'] = ", ".join(issues_choice)
 
-def display_chat_interface():
-    st.title("💬 مصاحبه هوشمند")
-    st.caption("لطفاً به سوالات دستیار هوشمند پاسخ دهید...")
+    with st.container(border=True):
+        st.subheader("۳. اهداف و انگیزه‌ها")
+        st.session_state.form_data['mirror_feeling'] = st.text_area("اولین تغییر مثبتی که دوست داری در آینه ببینی چیست؟", key="mirror")
+        st.session_state.form_data['goals_motivation'] = st.text_area("رسیدن به این هدف، چه فرصت‌های جدیدی برایت باز می‌کند؟", key="motivation")
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    if prompt := st.chat_input("پاسخ خود را اینجا بنویسید..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        send_message_to_backend(prompt)
-        st.rerun()
-
-def display_workout_plan():
-    """نمایش برنامه تمرینی نهایی."""
-    st.balloons()
-    st.title("🎉 برنامه تمرینی شما آماده شد!")
-    st.header("بر اساس گفتگوی ما، این برنامه برای شما طراحی شد:")
-    
-    # TODO: در فاز بعدی، اینجا برنامه را به صورت زیبا و گرافیکی نمایش می‌دهیم.
-    # فعلاً فقط پارامترهای استخراج شده را نمایش می‌دهیم.
-    st.success("در قدم بعدی، این برنامه را به صورت گرافیکی با ویدیوهای آموزشی نمایش خواهیم داد.")
-    st.json(st.session_state.plan_data)
+    with st.container(border=True):
+        st.subheader("۴. برنامه و محدودیت‌ها")
+        st.session_state.form_data['workout_days_per_week'] = st.slider("چند روز در هفته می‌تونی تمرین کنی؟", 1, 7, 3, key="days_slider")
+        feared_options = ["هیچکدام", "حرکات پا (اسکات)", "حرکات سنگین کمر (ددلیفت)", "سایر"]
+        feared_choice = st.multiselect("آیا حرکت خاصی هست که از انجام دادنش بترسی؟", feared_options, default="هیچکدام")
+        if "سایر" in feared_choice:
+            st.session_state.form_data['feared_exercises'] = st.text_area("لطفاً حرکات مورد نظر را بنویسید:", key="feared_other")
+        else:
+            st.session_state.form_data['feared_exercises'] = ", ".join(feared_choice)
 
     st.markdown("---")
-    st.subheader("می‌خوای یک برنامه کاملاً تخصصی داشته باشی؟")
-    st.info("با کلیک روی دکمه زیر، می‌تونی شرایط دریافت برنامه کاملاً شخصی‌سازی‌شده زیر نظر مستقیم مربی رو ببینی.")
-    if st.button("دریافت برنامه تخصصی (به زودی)", use_container_width=True):
-        st.toast("این قابلیت به زودی اضافه خواهد شد!")
+    
+    if st.button("🚀 برنامه من را بساز!", use_container_width=True, type="primary"):
+        submit_full_form()
 
-def send_message_to_backend(message: str):
-    """ارسال پیام به API و پردازش پاسخ."""
-    with st.chat_message("assistant"):
-        with st.spinner("مربی‌همراه در حال فکر کردن است..."):
-            try:
-                payload = {
-                    "telegram_user_id": st.session_state.telegram_user_id,
-                    "message": message,
-                    "first_name": st.session_state.first_name
-                }
-                # --- اینجا اصلاح شد ---
-                response = requests.post(CHAT_API_URL, json=payload)
-                response.raise_for_status() # بررسی خطاهای HTTP
-                
-                data = response.json()
-                ai_response = data.get("ai_response")
-                
-                # اضافه کردن پاسخ AI به تاریخچه
-                st.session_state.messages.append({"role": "assistant", "content": ai_response})
+def submit_full_form():
+    with st.spinner("در حال ارسال اطلاعات و ساختن برنامه... این ممکن است کمی طول بکشد..."):
+        try:
+            full_payload = {
+                "telegram_user_id": st.session_state.telegram_user_id,
+                **st.session_state.form_data
+            }
+            
+            # --- خط مهمی که از کامنت خارج شد ---
+            response = requests.post(f"{API_BASE_URL}/submit-form", json=full_payload)
+            response.raise_for_status()
 
-                # اگر مکالمه تمام شده بود، وضعیت را تغییر می‌دهیم
-                if data.get("is_final"):
-                    st.session_state.plan_received = True
-                    st.session_state.plan_data = data.get("plan_data")
+            plan_req_payload = {"telegram_user_id": st.session_state.telegram_user_id}
+            response = requests.post(f"{API_BASE_URL}/generate-plan", json=plan_req_payload)
+            response.raise_for_status()
+            
+            raw_response = response.json().get("raw_plan_response")
+            # تلاش برای پیدا کردن JSON در پاسخ
+            json_start = raw_response.find('{')
+            json_end = raw_response.rfind('}')
+            if json_start != -1 and json_end != -1:
+                plan_str = raw_response[json_start:json_end+1]
+                plan_data = json.loads(plan_str)
+            else:
+                raise json.JSONDecodeError("JSON معتبری در پاسخ یافت نشد.", raw_response, 0)
 
-            except requests.exceptions.RequestException as e:
-                error_message = f"خطا در ارتباط با سرور: {e}"
-                st.error(error_message)
-                st.session_state.messages.append({"role": "assistant", "content": error_message})
+            st.session_state.plan_data = plan_data
+            st.session_state.page = "plan"
+            st.rerun()
 
-def load_chat_history():
-    """تاریخچه چت کاربر را از بک‌اند بارگذاری می‌کند."""
-    user_id = st.session_state.telegram_user_id
-    try:
-        response = requests.get(HISTORY_API_URL.format(user_id=user_id))
-        response.raise_for_status()
-        history = response.json()
-        
-        formatted_history = []
-        for msg in history:
-            role = "user" if msg["sender"] == "user" else "assistant"
-            formatted_history.append({"role": role, "content": msg["message_text"]})
-        
-        st.session_state.messages = formatted_history
-    except requests.exceptions.RequestException as e:
-        st.error(f"خطا در بارگذاری تاریخچه: {e}")
+        except (requests.RequestException, json.JSONDecodeError) as e:
+            st.error(f"خطا در ساخت برنامه: {e}")
 
+def display_plan():
+    st.balloons()
+    st.title("🎉 برنامه تمرینی شما آماده شد!")
+    plan_data = st.session_state.plan_data
+    st.markdown(f"**خلاصه برنامه:** {plan_data.get('plan_summary', '')}")
+    st.markdown("---")
+    
+    for day_plan in plan_data.get('weekly_plan', []):
+        with st.expander(f"**روز {day_plan.get('day')}: {day_plan.get('day_title')}**", expanded=True):
+            for exercise in day_plan.get('exercises', []):
+                st.markdown(f"- **{exercise.get('name')}**: {exercise.get('sets')} ست × {exercise.get('reps')} تکرار")
 
-# --- منطق اصلی برنامه ---
 def main():
     st.set_page_config(page_title="مربی هوشمند", page_icon="🤖")
-    st.title("به دستیار هوشمند مربی خوش آمدید! 🤖")
-
     initialize_session_state()
-    
-    # نمایش صفحه مناسب بر اساس مرحله فعلی
-    if st.session_state.form_step == 1:
-        display_form_step_1()
-    elif st.session_state.form_step == 2:
-        display_form_step_2()
-    elif st.session_state.form_step == 3:
-        display_form_step_3()
-    elif st.session_state.form_step == 4:
-        if not st.session_state.messages:
-            send_message_to_backend("start")
-        if st.session_state.get("plan_received", False):
-            display_workout_plan(st.session_state.get("plan_data"))
-        else:
-            display_chat_interface()
-    
+    if st.session_state.page == "form":
+        display_smart_form()
+    elif st.session_state.page == "plan":
+        display_plan()
 
-    # st.write("DEBUG - session_state:", dict(st.session_state))
-    
 if __name__ == "__main__":
     main()
