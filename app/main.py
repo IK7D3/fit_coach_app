@@ -136,12 +136,17 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
     # --- منطق جدید: راه فرار برای جلوگیری از حلقه بی‌نهایت ---
     if user.repeat_count >= 2:
         # اگر یک سوال ۲ بار تکرار شده باشد، به زور به مرحله بعد می‌رویم
-        ai_response = "ظاهرا از پاسخ به این سوال ممانعت داری، اوکی بگذریم بریم سوال بعد..."
-        
-        # آماده‌سازی برای پرسیدن سوال بعدی در پیام بعدی کاربر
+        # ابتدا چک می‌کنیم که آیا سوال بعدی وجود دارد یا نه
+        if current_step + 1 < len(DIALOGUE_QUESTIONS):
+            next_question = DIALOGUE_QUESTIONS[current_step]
+            ai_response = f"ظاهرا از پاسخ به این سوال ممانعت داری، اوکی بگذریم بریم سوال بعد...\n\n{next_question}"
+        else:
+            # اگر این آخرین سوال بود، به مرحله نهایی می‌رویم
+            ai_response = "ما تمام سوالات لازم را بررسی کردیم. در حال آماده‌سازی برنامه شما هستیم!"
+
         should_increment_step = True
         user.repeat_count = 0 # ریست کردن شمارنده
-    
+
     elif current_step >= len(DIALOGUE_QUESTIONS):
         ai_response = "ما تمام سوالات لازم را بررسی کردیم. در حال آماده‌سازی برنامه شما هستیم!"
         # (منطق ساخت JSON نهایی)
@@ -156,8 +161,15 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
             last_user_answer = request.message
             previous_question = DIALOGUE_QUESTIONS[current_step - 1]
             next_question = DIALOGUE_QUESTIONS[current_step]
-            task_prompt = (f"سوال قبلی این بود: '{previous_question}'. پاسخ اخیر کاربر این است: '{last_user_answer}'.\n" f"وظیفه تو: ابتدا بررسی کن آیا پاسخ کاربر به طور منطقی به سوال قبلی ربط دارد یا نه. تو نباید انگیزه کاربر را قضاوت کنی. اگر پاسخ به یکی از جنبه‌های سوال (شخصی، شغلی و غیره) می‌پردازد، آن را 'مرتبط' در نظر بگیر، حتی اگر به نظرت سطحی یا نامناسب باشد.\n" f"اگر پاسخ مرتبط بود، پاسخت را با تگ [PROCEED] شروع کن، یک جمله کوتاه مثبت بگو و سپس سوال بعدی یعنی '{next_question}' را بپرس.\n" f"اگر پاسخ کاملاً نامرتبط بود (مثلاً در مورد آب و هوا صحبت کرد)، پاسخت را با تگ [REPEAT] شروع کن و سوال قبلی یعنی '{previous_question}' را دوباره بپرس.")
-
+            task_prompt = (
+                f"سوال قبلی که از کاربر پرسیدی این بود: '{previous_question}'. پاسخ اخیر کاربر این است: '{last_user_answer}'.\n\n"
+                f"وظیفه تو: ابتدا پاسخ کاربر را با معیارهای زیر ارزیابی کن:\n"
+                f"- **پاسخ محتوایی:** پاسخی است که سعی می‌کند به سوال اطلاعات بدهد (مثال: 'مشکل خاصی ندارم'، 'میخوام بازوهام بزرگ بشه').\n"
+                f"- **پاسخ طفره‌آمیز:** پاسخی است که از جواب دادن امتناع می‌کند یا بی‌ربط است (مثال: 'نمیخوام بگم'، 'به تو چه'، 'نمیدونم').\n\n"
+                f"حالا تصمیم بگیر:\n"
+                f"1. اگر پاسخ کاربر یک **پاسخ محتوایی** بود، پاسخت را با تگ [PROCEED] شروع کن، با یک جمله کوتاه مثبت آن را تایید کن و سپس سوال بعدی یعنی '{next_question}' را بپرس.\n"
+                f"2. اگر پاسخ کاربر یک **پاسخ طفره‌آمیز** بود، پاسخت را با تگ [REPEAT] شروع کن، با احترام به او بگو روی موضوع متمرکز بماند و همان سوال قبلی یعنی '{previous_question}' را دوباره از او بپرس."
+            )
         assistant = chat_sessions.get(user.telegram_user_id, FitnessCoachAssistant())
         chat_sessions[user.telegram_user_id] = assistant
 
