@@ -118,12 +118,26 @@ def generate_plan(request: PlanGenerationRequest, db: Session = Depends(get_db))
         for day_plan in plan_data.get('weekly_plan', []):
             day_num = day_plan.get('day')
             for exercise in day_plan.get('exercises', []):
+                
+                # --- منطق جدید و مقاوم برای تمیز کردن داده 'sets' ---
+                sets_value = exercise.get('sets')
+                cleaned_sets = 0  # یک مقدار پیش‌فرض امن
+
+                try:
+                    # تلاش می‌کنیم مقدار را به عدد صحیح تبدیل کنیم
+                    cleaned_sets = int(sets_value)
+                except (ValueError, TypeError):
+                    # اگر مقدار ورودی یک متن غیرقابل تبدیل (مثل 'مداوم') یا نوع داده نامعتبر دیگری بود،
+                    # برنامه خطا نمی‌دهد و از همان مقدار پیش‌فرض 0 استفاده می‌کند.
+                    cleaned_sets = 0
+                # ----------------------------------------------------
+
                 plan_entry = models.PlanEntry(
                     plan_id=new_plan.id,
                     day_number=day_num,
                     exercise_name=exercise.get('name'),
-                    sets=exercise.get('sets'),
-                    reps=exercise.get('reps')
+                    sets=cleaned_sets,  # <-- از مقدار تمیز شده و مطمئن استفاده می‌کنیم
+                    reps=str(exercise.get('reps', ''))
                 )
                 db.add(plan_entry)
         
