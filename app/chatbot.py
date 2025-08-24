@@ -1,49 +1,69 @@
 # app/chatbot.py
 import os
 import json
-
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
-from langchain.memory import ConversationSummaryBufferMemory
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-# ---- تنظیمات اولیه ----
-# کلید API خود را اینجا قرار دهید. بهتر است از متغیرهای محیطی استفاده کنید.
+# پرامپت تخصصی برای ماژول تشخیص قصد
+INTENT_RECOGNITION_PROMPT = """
+تو یک مدل زبان هستی که فقط برای طبقه‌بندی پیام کاربر استفاده می‌شوی.
+سوال پرسیده شده از کاربر این بود: '{question}'
+پیام کاربر این است: '{user_message}'
 
+بر اساس پیام کاربر، قصد او کدام یک از موارد زیر است؟
+- ANSWER: کاربر در حال پاسخ دادن به سوال است. (مثال: 'بله دیسک کمر دارم'، '3 روز در هفته'، 'میخوام بازوهام بزرگ بشه')
+- QUESTION: کاربر در حال پرسیدن یک سوال متقابل است. (مثال: 'چطوری درصد چربی بگیرم؟'، 'منظورت چیه؟')
+- REFUSAL: کاربر از پاسخ دادن امتناع می‌کند. (مثال: 'نمیخوام بگم'، 'به تو چه')
+- IRRELEVANT: حرف او کاملاً بی‌ربط است. (مثال: 'هوا چطوره؟')
 
+فقط و فقط یکی از کلمات کلیدی بالا (ANSWER, QUESTION, REFUSAL, IRRELEVANT) را به عنوان خروجی برگردان.
+"""
 
-# پرامپت سیستمی که قبلاً طراحی کردیم
-SYSTEM_PROMPT = """
-تو یک مربی بدنسازی هوش مصنوعی به نام «مربی‌همراه» هستی. لحن تو حمایت‌گر، حرفه‌ای و الهام‌بخش است. تو باید به کاربر کمک کنی تا با پاسخ دادن به چند سوال، بهترین برنامه تمرینی را دریافت کند.
+# پرامپت تخصصی برای ماژول تولید پاسخ
+RESPONSE_GENERATION_PROMPT = """
+تو یک مربی بدنسازی هوش مصنوعی به نام «مربی‌همراه» هستی. لحن تو حمایت‌گر، حرفه‌ای و الهام‌بخش است.
 اطلاعات کاربر: {user_data}
-تاریخچه گفتگو: {history}
-وظیفه فعلی: {task}
+تاریخچه اخیر گفتگو: {history}
+وظیفه فعلی تو این است: {task}
 """
 
 class FitnessCoachAssistant:
-    """
-    نسخه ساده‌شده دستیار هوش مصنوعی.
-    فقط یک وظیفه دارد: یک پرامپت کامل را دریافت کرده و پاسخ مدل را برگرداند.
-    """
     def __init__(self):
-        # ما مدل رو به gpt-4o تغییر می‌دیم که در دنبال کردن دستورالعمل‌ها بسیار قدرتمنده
+        # ما از دو مدل مختلف می‌توانیم استفاده کنیم، یکی برای سرعت، یکی برای کیفیت
+        # اما برای سادگی، فعلا از یک مدل برای هر دو کار استفاده می‌کنیم.
         self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
 
-    def get_simple_response(self, final_prompt: str) -> str:
-        # این متد بدون تغییر باقی می‌ماند
+    def recognize_intent(self, question: str, user_message: str) -> str:
+        """
+        متخصص شماره ۱: تشخیص قصد کاربر
+        """
         try:
-            response = self.llm.invoke(final_prompt)
-            return response.content if hasattr(response, 'content') else str(response)
+            prompt = INTENT_RECOGNITION_PROMPT.format(question=question, user_message=user_message)
+            response = self.llm.invoke(prompt)
+            intent = response.content.strip().upper()
+            
+            # اطمینان از اینکه خروجی یکی از گزینه‌های معتبر است
+            if intent in ["ANSWER", "QUESTION", "REFUSAL", "IRRELEVANT"]:
+                return intent
+            return "IRRELEVANT" # اگر مدل پاسخ نامعتبری داد
         except Exception as e:
-            print(f"Error calling LLM: {e}")
-            return "متاسفانه در حال حاضر مشکلی در ارتباط با سرور پیش آمده. لطفاً کمی بعد دوباره تلاش کنید."
+            print(f"Error in intent recognition: {e}")
+            return "IRRELEVANT"
 
+    def generate_response(self, user_data: str, history: str, task: str) -> str:
+        """
+        متخصص شماره ۲: تولید پاسخ نهایی برای کاربر
+        """
+        try:
+            prompt = RESPONSE_GENERATION_PROMPT.format(user_data=user_data, history=history, task=task)
+            response = self.llm.invoke(prompt)
+            return response.content
+        except Exception as e:
+            print(f"Error in response generation: {e}")
+            return "متاسفانه در حال حاضر مشکلی در ارتباط با سرور پیش آمده. لطفاً کمی بعد دوباره تلاش کنید."
+    
     @staticmethod
     def parse_final_response(ai_response: str):
-        """
-        تلاش می‌کند تا پاسخ نهایی AI را به فرمت JSON پارس کند.
-        """
+        # این متد بدون تغییر باقی می‌ماند
         try:
             if "```json" in ai_response:
                 clean_response = ai_response.split("```json")[1].split("```")[0].strip()
@@ -52,64 +72,7 @@ class FitnessCoachAssistant:
                 end_index = ai_response.rfind('}')
                 if start_index != -1 and end_index != -1:
                     clean_response = ai_response[start_index : end_index + 1]
-                else:
-                    return None
+                else: return None
             return json.loads(clean_response)
         except (json.JSONDecodeError, IndexError):
             return None
-
-# --- بخش تست (برای اجرای مستقیم این فایل) ---
-if __name__ == "__main__":
-    print("--- Fitness Coach Assistant Local Test ---")
-    
-    # if not os.getenv("COHERE_API_KEY"):
-    #     print("\n!!! هشدار: لطفاً کلید COHERE_API_KEY خود را در کد قرار دهید.")
-    # else:
-    #     # ۱. شبیه‌سازی داده‌هایی که از فرم و دیتابیس می‌آیند
-    #     mock_user_data = (
-    #         "- نام: ایمان\n"
-    #         "- جنسیت: مرد\n"
-    #         "- قد: 180 سانتی‌متر\n"
-    #         "- وزن فعلی: 85 کیلوگرم\n"
-    #         "- وزن هدف: 80 کیلوگرم"
-    #     )
-    #     mock_exercises = (
-    #         "- پرس سینه هالتر (برای گروه عضلانی: سینه)\n"
-    #         "- اسکات با هالتر (برای گروه عضلانی: پا)\n"
-    #         "- جلو بازو دمبل (برای گروه عضلانی: جلو بازو)"
-    #     )
-
-    #     # ۲. فرمت کردن پرامپت اصلی با داده‌های شبیه‌سازی شده
-    #     formatted_system_prompt = SYSTEM_PROMPT.format(
-    #         user_data=mock_user_data,
-    #         available_exercises=mock_exercises
-    #     )
-
-    #     assistant = FitnessCoachAssistant()
-        
-    #     print("✅ دستیار هوشمند آماده است. گفتگو را شروع کنید (برای خروج 'exit' را تایپ کنید).")
-    #     print("------------------------------------------------------------------")
-
-    #     # ۳. شروع گفتگو با ارسال اولین پیام ("start")
-    #     first_ai_message = assistant.get_response("start", formatted_system_prompt)
-    #     print(f"AI: {first_ai_message}")
-
-    #     # ۴. ادامه گفتگو در یک حلقه
-    #     while True:
-    #         user_message = input("You: ")
-    #         if user_message.lower() == 'exit':
-    #             break
-            
-    #         # برای پیام‌های بعدی، دیگر نیازی به ارسال پرامپت فرمت‌شده نیست
-    #         ai_message = assistant.get_response(user_message, formatted_system_prompt)
-            
-    #         plan_data = assistant.parse_final_response(ai_message)
-            
-    #         if plan_data:
-    #             print("\n--- مکالمه تمام شد ---")
-    #             print("AI: برنامه تمرینی زیر بر اساس گفتگوی ما تولید شد:")
-    #             print(json.dumps(plan_data, indent=2, ensure_ascii=False))
-    #             print("----------------------\n")
-    #             break
-    #         else:
-    #             print(f"AI: {ai_message}")

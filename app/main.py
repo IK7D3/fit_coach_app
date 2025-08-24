@@ -104,17 +104,17 @@ def get_user_status(telegram_user_id: int, db: Session = Depends(get_db)):
     return UserStatusResponse(form_completed=form_completed, plan_generated=plan_exists)
 
 DIALOGUE_QUESTIONS = [
-    # step 1
+    # step 0
     "اول از همه، درصد چربی و درصد تقریبی عضلات بدنت رو می‌دونی؟ اگر نمی‌دونی، فقط بهم بگو بدنت به کدوم توصیف نزدیک‌تره: الف) عضلانی و خشک، ب) عضلانی با کمی چربی، ج) بیشتر اضافه وزن دارم.",
-    # step 2
+    # step 1
     "بسیار خب. حالا بهم بگو آیا ناهنجاری اسکلتی مثل دیسک کمر، گودی کمر شدید، قوز پشتی یا درد مزمن در مفاصلت داری؟",
-    # step 3
+    # step 2
     "ممنون. وقتی به بدنت در آینه نگاه می‌کنی، اولین تغییر مثبتی که دوست داری ببینی چی هست؟ (مثلا شکم صاف‌تر، بازوهای حجیم‌تر، یا فرم بهتر پاها)",
-    # step 4
+    # step 3
     "درک می‌کنم. رسیدن به این هدف، چه فرصت‌های جدیدی رو در زندگی شخصی یا شغلی برات باز می‌کنه؟",
-    # step 5
+    # step 4
     "عالیه. حالا بریم سراغ برنامه‌ریزی. در هفته چند روز می‌تونی با تمرکز کامل برای تمرین وقت بذاری؟",
-    # step 6
+    # step 5
     "و سوال آخر: آیا حرکت یا تمرین خاصی وجود داره که از انجام دادنش می‌ترسی یا حس می‌کنی بهت آسیب می‌زنه؟ (مثلاً بعضی‌ها با حرکت اسکات یا ددلیفت راحت نیستند)"
 ]
 
@@ -129,76 +129,67 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
     db.add(user_chat)
     db.commit()
 
+    assistant = chat_sessions.get(user.telegram_user_id, FitnessCoachAssistant())
+    chat_sessions[user.telegram_user_id] = assistant
+
     current_step = user.dialogue_step
-    ai_response = ""
-    should_increment_step = False
+    task_for_generator = ""
 
-    # --- منطق جدید: راه فرار برای جلوگیری از حلقه بی‌نهایت ---
-    if user.repeat_count >= 2:
-        # اگر یک سوال ۲ بار تکرار شده باشد، به زور به مرحله بعد می‌رویم
-        # ابتدا چک می‌کنیم که آیا سوال بعدی وجود دارد یا نه
-        if current_step + 1 < len(DIALOGUE_QUESTIONS):
-            next_question = DIALOGUE_QUESTIONS[current_step]
-            ai_response = f"ظاهرا از پاسخ به این سوال ممانعت داری، اوکی بگذریم بریم سوال بعد...\n\n{next_question}"
-        else:
-            # اگر این آخرین سوال بود، به مرحله نهایی می‌رویم
-            ai_response = "ما تمام سوالات لازم را بررسی کردیم. در حال آماده‌سازی برنامه شما هستیم!"
-
-        should_increment_step = True
-        user.repeat_count = 0 # ریست کردن شمارنده
-
-    elif current_step >= len(DIALOGUE_QUESTIONS):
-        ai_response = "ما تمام سوالات لازم را بررسی کردیم. در حال آماده‌سازی برنامه شما هستیم!"
-        # (منطق ساخت JSON نهایی)
+    # --- مرحله ۱: تحلیل ورودی ---
+    if current_step == 0:
+        intent = "ANSWER" # فرض می‌کنیم پیام "start" همیشه یک پاسخ معتبر است
     else:
-        # --- منطق نگهبان هوش مصنوعی (که از قبل داشتیم) ---
-        task_prompt = "" # مقداردهی اولیه
-        if current_step == 0:
-            user_info = (f"- جنسیت: {user.gender}\n" f"- قد: {user.height_cm} سانتی‌متر\n" f"- وزن فعلی: {user.current_weight_kg} کیلوگرم\n" f"- وزن هدف: {user.target_weight_kg} کیلوگرم")
-            task_prompt = (f"این اولین پیام به کاربر است. نام او '{user.first_name}' است. با نامش به او سلام کن و مشخصاتش را به این شکل نمایش بده:\n{user_info}\n" f"سپس، این سوال را به شکلی طبیعی و دوستانه از او بپرس: '{DIALOGUE_QUESTIONS[current_step]}'")
-            should_increment_step = True
-        else:
-            last_user_answer = request.message
-            previous_question = DIALOGUE_QUESTIONS[current_step - 1]
-            next_question = DIALOGUE_QUESTIONS[current_step]
-            task_prompt = (
-                f"سوال قبلی که از کاربر پرسیدی این بود: '{previous_question}'. پاسخ اخیر کاربر این است: '{last_user_answer}'.\n\n"
-                f"وظیفه تو: ابتدا پاسخ کاربر را با معیارهای زیر ارزیابی کن:\n"
-                f"- **پاسخ محتوایی:** پاسخی است که سعی می‌کند به سوال اطلاعات بدهد (مثال: 'مشکل خاصی ندارم'، 'میخوام بازوهام بزرگ بشه').\n"
-                f"- **پاسخ طفره‌آمیز:** پاسخی است که از جواب دادن امتناع می‌کند یا بی‌ربط است (مثال: 'نمیخوام بگم'، 'به تو چه'، 'نمیدونم').\n\n"
-                f"حالا تصمیم بگیر:\n"
-                f"1. اگر پاسخ کاربر یک **پاسخ محتوایی** بود، پاسخت را با تگ [PROCEED] شروع کن، با یک جمله کوتاه مثبت آن را تایید کن و سپس سوال بعدی یعنی '{next_question}' را بپرس.\n"
-                f"2. اگر پاسخ کاربر یک **پاسخ طفره‌آمیز** بود، پاسخت را با تگ [REPEAT] شروع کن، با احترام به او بگو روی موضوع متمرکز بماند و همان سوال قبلی یعنی '{previous_question}' را دوباره از او بپرس."
-            )
-        assistant = chat_sessions.get(user.telegram_user_id, FitnessCoachAssistant())
-        chat_sessions[user.telegram_user_id] = assistant
-
-        past_history = db.query(models.ChatHistory).filter(models.ChatHistory.user_id == user.id).order_by(models.ChatHistory.timestamp.desc()).limit(10).all()
-        history_str = "\n".join([f"{msg.sender}: {msg.message_text}" for msg in reversed(past_history)])
-        user_data_str = (f"- نام: {user.first_name}\n" f"- جنسیت: {user.gender}\n" f"- قد: {user.height_cm} سانتی‌متر\n" f"- وزن فعلی: {user.current_weight_kg} کیلوگرم\n" f"- وزن هدف: {user.target_weight_kg} کیلوگرم")
-
-        final_prompt = SYSTEM_PROMPT.format(user_data=user_data_str, history=history_str, task=task_prompt)
-        raw_ai_response = assistant.get_simple_response(final_prompt)
-
-        if raw_ai_response.strip().startswith("[PROCEED]"):
-            should_increment_step = True
-            user.repeat_count = 0  # ریست کردن شمارنده چون پاسخ درست بود
-            ai_response = raw_ai_response.replace("[PROCEED]", "").strip()
-        elif raw_ai_response.strip().startswith("[REPEAT]"):
-            should_increment_step = False
-            user.repeat_count += 1  # افزایش شمارنده چون پاسخ اشتباه بود
-            ai_response = raw_ai_response.replace("[REPEAT]", "").strip()
-        else:
-            should_increment_step = True
-            user.repeat_count = 0 # ریست کردن شمارنده به عنوان حالت پیش‌فرض
-            ai_response = raw_ai_response
-
-    # --- آپدیت دیتابیس ---
-    if should_increment_step:
-        user.dialogue_step += 1
+        previous_question = DIALOGUE_QUESTIONS[current_step - 1]
+        intent = assistant.recognize_intent(question=previous_question, user_message=request.message)
     
-    db.commit() # ذخیره تمام تغییرات (dialogue_step و repeat_count)
+    print(f"User: {user.telegram_user_id}, Step: {current_step}, Intent: {intent}") # برای دیباگ
 
+    # --- مرحله ۲: مدیریت گفتگو (مغز پایتون) ---
+    if user.repeat_count >= 2:
+        user.dialogue_step += 1
+        user.repeat_count = 0
+        if user.dialogue_step < len(DIALOGUE_QUESTIONS):
+            next_question = DIALOGUE_QUESTIONS[user.dialogue_step]
+            task_for_generator = f"به کاربر بگو 'ظاهرا از پاسخ به این سوال ممانعت داری، اوکی بگذریم بریم سوال بعد...'. سپس بلافاصله این سوال جدید را بپرس: '{next_question}'"
+        else:
+            task_for_generator = "به کاربر بگو تمام سوالات پرسیده شد و برنامه در حال آماده‌سازی است."
+    
+    elif intent == "ANSWER":
+        user.dialogue_step += 1
+        user.repeat_count = 0
+        if user.dialogue_step < len(DIALOGUE_QUESTIONS):
+            next_question = DIALOGUE_QUESTIONS[user.dialogue_step]
+            task_for_generator = f"پاسخ کاربر را با یک عبارت مثبت کوتاه (مثل عالیه یا بسیار خب) تایید کن و سپس این سوال را بپرس: '{next_question}'"
+        else:
+            task_for_generator = "به کاربر بگو تمام سوالات پرسیده شد و برنامه در حال آماده‌سازی است."
+
+    elif intent in ["QUESTION", "REFUSAL", "IRRELEVANT"]:
+        user.repeat_count += 1
+        previous_question = DIALOGUE_QUESTIONS[current_step - 1]
+        if intent == "QUESTION":
+            task_for_generator = f"ابتدا به سوال کاربر '{request.message}' پاسخ کوتاهی بده، سپس سوال قبلی یعنی '{previous_question}' را دوباره بپرس."
+        else: # REFUSAL or IRRELEVANT
+            task_for_generator = f"به کاربر با احترام بگو روی موضوع متمرکز بماند و سوال قبلی یعنی '{previous_question}' را دوباره بپرس."
+
+    # مدیریت پیام خوشامدگویی در اولین مرحله
+    if current_step == 0:
+        user_info = (f"جنسیت: {user.gender}, قد: {user.height_cm} سانتی‌متر, وزن فعلی: {user.current_weight_kg} کیلوگرم, وزن هدف: {user.target_weight_kg} کیلوگرم")
+        first_question = DIALOGUE_QUESTIONS[0]
+        task_for_generator = (f"این اولین پیام به کاربر '{user.first_name}' است. به او خوشامد بگو و مشخصاتش را به این شکل نمایش بده: {user_info}. سپس بلافاصله این سوال را بپرس: '{first_question}'")
+
+    # --- مرحله ۳: تولید پاسخ ---
+    past_history = db.query(models.ChatHistory).filter(models.ChatHistory.user_id == user.id).order_by(models.ChatHistory.timestamp.desc()).limit(10).all()
+    history_str = "\n".join([f"{msg.sender}: {msg.message_text}" for msg in reversed(past_history)])
+    user_data_str = (f"نام: {user.first_name}, جنسیت: {user.gender}, قد: {user.height_cm}, وزن فعلی: {user.current_weight_kg}, وزن هدف: {user.target_weight_kg}")
+    
+    ai_response = assistant.generate_response(
+        user_data=user_data_str,
+        history=history_str,
+        task=task_for_generator
+    )
+
+    db.commit() # ذخیره تغییرات در user.dialogue_step و user.repeat_count
+    
     # ذخیره پاسخ AI در تاریخچه
     ai_chat = models.ChatHistory(user_id=user.id, sender="ai", message_text=ai_response)
     db.add(ai_chat)
