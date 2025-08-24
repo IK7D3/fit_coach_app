@@ -1,7 +1,7 @@
 # app/chatbot.py
 import os
 import json
-from langchain_cohere import ChatCohere
+
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
