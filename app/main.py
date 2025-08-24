@@ -129,19 +129,17 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
     db.add(user_chat)
     db.commit()
 
-    # --- منطق جدید کنترل گفتگو ---
     current_step = user.dialogue_step
+    ai_response = ""
+    should_increment_step = False
 
-    # اگر گفتگو تمام شده، یک پیام استاندارد برگردان
     if current_step >= len(DIALOGUE_QUESTIONS):
         ai_response = "ما تمام سوالات لازم را بررسی کردیم. در حال آماده‌سازی برنامه شما هستیم!"
         # اینجا بعداً منطق ساخت JSON نهایی را اضافه خواهید کرد
     else:
-        # وظیفه فعلی را مشخص کن
-        task_prompt = f"وظیفه تو پرسیدن این سوال است: '{DIALOGUE_QUESTIONS[current_step]}'. این سوال را به شکلی طبیعی و دوستانه از کاربر بپرس."
-        
-        if current_step == 0 and request.message == "start":
-             # پیام خوشامدگویی ویژه برای شروع
+        # --- منطق نگهبان هوش مصنوعی ---
+        if current_step == 0:
+            # برای پیام اول، همیشه به مرحله بعد می‌رویم
             user_info = (
                 f"- جنسیت: {user.gender}\n"
                 f"- قد: {user.height_cm} سانتی‌متر\n"
@@ -149,18 +147,25 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
                 f"- وزن هدف: {user.target_weight_kg} کیلوگرم"
             )
             task_prompt = (
-                f"این اولین پیام به کاربر است. با نامش به او سلام کن و مشخصاتش را به این شکل نمایش بده:\n{user_info}\n"
+                f"این اولین پیام به کاربر است. نام او '{user.first_name}' است. با نامش به او سلام کن و مشخصاتش را به این شکل نمایش بده:\n{user_info}\n"
                 f"سپس، این سوال را به شکلی طبیعی و دوستانه از او بپرس: '{DIALOGUE_QUESTIONS[current_step]}'"
             )
+            should_increment_step = True
+        else:
+            # برای سوالات بعدی، پاسخ کاربر را ارزیابی می‌کنیم
+            last_user_answer = request.message
+            previous_question = DIALOGUE_QUESTIONS[current_step - 1]
+            next_question = DIALOGUE_QUESTIONS[current_step]
+            task_prompt = (
+                f"سوال قبلی که از کاربر پرسیدی این بود: '{previous_question}'. پاسخ اخیر کاربر این است: '{last_user_answer}'.\n"
+                f"وظیفه تو: ابتدا پاسخ کاربر را ارزیابی کن.\n"
+                f"اگر پاسخ کاربر، جوابی مرتبط به سوال قبلی بود، پاسخت را با تگ [PROCEED] شروع کن، یک جمله کوتاه مثبت بگو و سپس سوال بعدی یعنی این سوال را بپرس: '{next_question}'.\n"
+                f"اگر پاسخ کاربر نامرتبط یا بی‌معنی بود، پاسخت را با تگ [REPEAT] شروع کن، با احترام به او بگو روی موضوع متمرکز بماند و همان سوال قبلی یعنی '{previous_question}' را دوباره از او بپرس."
+            )
 
-        # مقداردهی دستیار هوش مصنوعی
-        # (این بخش از کد chatbot.py شما می‌آید)
-        assistant = chat_sessions.get(user.telegram_user_id)
-        if not assistant:
-            assistant = FitnessCoachAssistant() # فرض بر اینکه chatbot.py این کلاس را دارد
-            chat_sessions[user.telegram_user_id] = assistant
+        assistant = chat_sessions.get(user.telegram_user_id, FitnessCoachAssistant())
+        chat_sessions[user.telegram_user_id] = assistant
 
-        # تزریق حافظه (مهم برای حفظ زمینه)
         past_history = db.query(models.ChatHistory).filter(models.ChatHistory.user_id == user.id).order_by(models.ChatHistory.timestamp.desc()).limit(10).all()
         history_str = "\n".join([f"{msg.sender}: {msg.message_text}" for msg in reversed(past_history)])
 
@@ -172,19 +177,28 @@ def handle_chat(request: ChatRequest, db: Session = Depends(get_db)):
             f"- وزن هدف: {user.target_weight_kg} کیلوگرم"
         )
 
-        # ساخت پرامپت نهایی و ساده
         final_prompt = SYSTEM_PROMPT.format(
             user_data=user_data_str,
             history=history_str,
             task=task_prompt
         )
 
-        # دریافت پاسخ از هوش مصنوعی (اینجا از get_response ساده استفاده می‌کنیم)
-        # توجه: شاید لازم باشد متد get_response در chatbot.py را ساده‌سازی کنید
-        # تا فقط یک پرامپت کامل را دریافت کرده و اجرا کند.
-        ai_response = assistant.get_simple_response(final_prompt) # مثال ساده‌شده
+        raw_ai_response = assistant.get_simple_response(final_prompt)
 
-        # برو به مرحله بعد
+        # --- پردازش تگ‌ها ---
+        if raw_ai_response.strip().startswith("[PROCEED]"):
+            should_increment_step = True
+            ai_response = raw_ai_response.replace("[PROCEED]", "").strip()
+        elif raw_ai_response.strip().startswith("[REPEAT]"):
+            should_increment_step = False
+            ai_response = raw_ai_response.replace("[REPEAT]", "").strip()
+        else:
+            # اگر مدل تگ را فراموش کرد، به عنوان حالت پیش‌فرض به مرحله بعد می‌رویم
+            should_increment_step = True
+            ai_response = raw_ai_response
+
+    # --- آپدیت مرحله گفتگو ---
+    if should_increment_step:
         user.dialogue_step += 1
         db.commit()
 
