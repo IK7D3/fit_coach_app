@@ -6,7 +6,7 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain.memory import ConversationSummaryBufferMemory
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 # ---- تنظیمات اولیه ----
 # کلید API خود را اینجا قرار دهید. بهتر است از متغیرهای محیطی استفاده کنید.
@@ -28,7 +28,7 @@ class FitnessCoachAssistant:
     """
     def __init__(self):
         # ما مدل رو به gpt-4o تغییر می‌دیم که در دنبال کردن دستورالعمل‌ها بسیار قدرتمنده
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
+        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
 
     def get_simple_response(self, final_prompt: str) -> str:
         # این متد بدون تغییر باقی می‌ماند
