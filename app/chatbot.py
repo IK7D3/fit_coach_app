@@ -9,7 +9,6 @@ FEEDBACK_PROMPT = """
 وظیفه تو: یک پیام کوتاه، مثبت و حمایت‌گر (حداکثر یک جمله) در واکنش به پاسخ او بنویس.
 مثال: اگر به سوال 'چند روز در هفته تمرین می‌کنی؟' پاسخ داد '۳ روز'، تو بگو: 'عالیه! ۳ روز در هفته یک تعهد فوق‌العاده است.'
 """
-
 # پرامپت تخصصی برای تولید برنامه نهایی
 PLAN_GENERATION_PROMPT = """
 تو یک مربی بدنسازی هوش مصنوعی متخصص به نام «مربی‌همراه» هستی.
@@ -91,6 +90,16 @@ PLAN_GENERATION_PROMPT = """
 -   خروجی تو باید فقط و فقط شامل ساختار JSON معتبر باشد و هیچ متن اضافه‌ای قبل یا بعد از آن نباشد.
 """
 
+JSON_FIX_PROMPT = """
+تو یک ربات متخصص در اصلاح ساختار JSON هستی. من تلاش کردم متن زیر را به JSON تبدیل کنم اما با خطای '{error}' مواجه شدم.
+لطفاً متن خراب زیر را بررسی کرده و آن را اصلاح کن.
+خروجی تو باید فقط و فقط شامل نسخه اصلاح شده و معتبر JSON باشد و هیچ توضیحی قبل یا بعد از آن ننویس.
+
+<متن_خراب>
+{broken_json}
+</متن_خراب>
+"""
+
 class FitnessCoachAssistant:
     def __init__(self):
         self.llm = ChatCohere(model="command-r", temperature=0.7)
@@ -114,3 +123,15 @@ class FitnessCoachAssistant:
         except Exception as e:
             print(f"Error in plan generation: {e}")
             return '{"error": "متاسفانه در تولید برنامه خطایی رخ داد."}'
+        
+    def fix_json(self, broken_json: str, error: str) -> str:
+        """
+        متخصص شماره ۳: دریافت JSON خراب و تلاش برای اصلاح آن
+        """
+        try:
+            prompt = JSON_FIX_PROMPT.format(broken_json=broken_json, error=error)
+            response = self.llm.invoke(prompt)
+            return response.content
+        except Exception as e:
+            print(f"Error in JSON fixing: {e}")
+            return broken_json

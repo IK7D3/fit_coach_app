@@ -90,64 +90,75 @@ def generate_plan(request: PlanGenerationRequest, db: Session = Depends(get_db))
 - حرکات نگران‌کننده: {user.feared_exercises}
     """
     
+    # --- تلاش اول برای تولید برنامه ---
     raw_plan_response = assistant.generate_plan(user_data=user_data_str.strip())
-
-    # --- بخش جدید: تحلیل و ذخیره برنامه در دیتابیس ---
+    plan_data = None
+    
+    # --- حلقه اصلاح خودکار (منطق نگهبان) ---
     try:
-        # ۱. تلاش برای پیدا کردن و پارس کردن JSON در پاسخ AI
+        # ۱. تلاش برای پیدا کردن و پارس کردن JSON
         json_start = raw_plan_response.find('{')
         json_end = raw_plan_response.rfind('}')
         if json_start != -1 and json_end != -1:
             plan_str = raw_plan_response[json_start:json_end+1]
             plan_data = json.loads(plan_str)
         else:
-            raise ValueError("JSON معتبری در پاسخ یافت نشد.")
+            raise ValueError("ساختار اولیه JSON یافت نشد.")
 
-        # ۲. اگر از قبل برنامه‌ای برای کاربر وجود دارد، آن را پاک می‌کنیم
-        existing_plan = db.query(models.GeneratedPlan).filter(models.GeneratedPlan.user_id == user.id).first()
-        if existing_plan:
-            db.delete(existing_plan)
-            db.commit()
+    except json.JSONDecodeError as e:
+        print(f"Initial JSON parsing failed: {e}. Attempting self-correction...")
+        try:
+            # ۲. اگر تلاش اول ناموفق بود، از متخصص اصلاح JSON کمک می‌گیریم
+            corrected_response = assistant.fix_json(broken_json=plan_str, error=str(e))
+            
+            # ۳. دوباره برای پیدا کردن و پارس کردن JSON اصلاح شده تلاش می‌کنیم
+            json_start = corrected_response.find('{')
+            json_end = corrected_response.rfind('}')
+            if json_start != -1 and json_end != -1:
+                corrected_plan_str = corrected_response[json_start:json_end+1]
+                plan_data = json.loads(corrected_plan_str)
+                print("Self-correction successful!")
+            else:
+                raise ValueError("ساختار JSON اصلاح شده نیز یافت نشد.")
 
-        # ۳. ساخت رکورد اصلی برنامه (پوشه)
-        new_plan = models.GeneratedPlan(user_id=user.id)
-        db.add(new_plan)
-        db.flush() # برای دسترسی به new_plan.id در ادامه
+        except (ValueError, json.JSONDecodeError) as final_e:
+            print(f"Self-correction failed: {final_e}")
+            # اگر اصلاح هم ناموفق بود، تسلیم می‌شویم
+            plan_data = None
+    # --------------------------------------------------
 
-        # ۴. حلقه زدن روی روزها و حرکات و ساخت رکوردهای جزئیات (برگه‌ها)
-        for day_plan in plan_data.get('weekly_plan', []):
-            day_num = day_plan.get('day')
-            for exercise in day_plan.get('exercises', []):
-                
-                # --- منطق جدید و مقاوم برای تمیز کردن داده 'sets' ---
-                sets_value = exercise.get('sets')
-                cleaned_sets = 0  # یک مقدار پیش‌فرض امن
+    # --- ذخیره در دیتابیس (فقط اگر plan_data معتبر باشد) ---
+    if plan_data:
+        try:
+            existing_plan = db.query(models.GeneratedPlan).filter(models.GeneratedPlan.user_id == user.id).first()
+            if existing_plan:
+                db.delete(existing_plan)
+                db.commit()
 
-                try:
-                    # تلاش می‌کنیم مقدار را به عدد صحیح تبدیل کنیم
-                    cleaned_sets = int(sets_value)
-                except (ValueError, TypeError):
-                    # اگر مقدار ورودی یک متن غیرقابل تبدیل (مثل 'مداوم') یا نوع داده نامعتبر دیگری بود،
-                    # برنامه خطا نمی‌دهد و از همان مقدار پیش‌فرض 0 استفاده می‌کند.
+            new_plan = models.GeneratedPlan(user_id=user.id)
+            db.add(new_plan)
+            db.flush()
+
+            for day_plan in plan_data.get('weekly_plan', []):
+                day_num = day_plan.get('day')
+                for exercise in day_plan.get('exercises', []):
+                    # ... (منطق تمیز کردن sets بدون تغییر است)
+                    sets_value = exercise.get('sets')
                     cleaned_sets = 0
-                # ----------------------------------------------------
+                    try:
+                        cleaned_sets = int(sets_value)
+                    except (ValueError, TypeError):
+                        cleaned_sets = 0
+                    
+                    plan_entry = models.PlanEntry(plan_id=new_plan.id, day_number=day_num, exercise_name=exercise.get('name'), sets=cleaned_sets, reps=str(exercise.get('reps', '')))
+                    db.add(plan_entry)
+            
+            db.commit()
+            print(f"Plan successfully saved for user {user.telegram_user_id}")
 
-                plan_entry = models.PlanEntry(
-                    plan_id=new_plan.id,
-                    day_number=day_num,
-                    exercise_name=exercise.get('name'),
-                    sets=cleaned_sets,  # <-- از مقدار تمیز شده و مطمئن استفاده می‌کنیم
-                    reps=str(exercise.get('reps', ''))
-                )
-                db.add(plan_entry)
-        
-        db.commit() # ذخیره نهایی تمام تغییرات
-        print(f"Plan successfully saved for user {user.telegram_user_id}")
-
-    except (ValueError, json.JSONDecodeError) as e:
-        print(f"Error saving plan to DB: {e}")
-        # اگر در ذخیره‌سازی خطا رخ داد، مشکلی نیست. حداقل پاسخ خام را به کاربر برمی‌گردانیم.
-        # می‌توانید در اینجا منطق مدیریت خطای بهتری پیاده‌سازی کنید.
+        except Exception as db_e:
+            print(f"Error saving VALID plan to DB: {db_e}")
+            db.rollback()
 
     return {"raw_plan_response": raw_plan_response}
 
