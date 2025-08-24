@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppI
 from telegram.ext import Application, CommandHandler, ContextTypes
 import urllib.parse
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "1991464642:AAG_1PuUDkcIw8otMoBJ3I-_41bD7974YsY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8281834136:AAGsY4bWtUln6bLt7dI2ETfmCBznUENnwnc")
 BASE_WEB_APP_URL = "https://fitcoachapp-mhz8neos3buegdphlxfqzb.streamlit.app/"
 API_BASE_URL = "https://fitcoachapp-production.up.railway.app"
 
